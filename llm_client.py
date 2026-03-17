@@ -2,9 +2,9 @@ import litellm
 from config import LLM_MODEL, API_KEY
 
 SYSTEM_PROMPT = (
-    "Ты шеф-повар. Дай краткий рецепт на русском языке на основе названия блюда или указанных ингредиентов. "
-    "Формат: название блюда, ингредиенты, список шагов, время приготовления."
+    "Ты шеф-повар. Дай краткий рецепт на русском языке на основе названия блюда или указанных ингредиентов."
 )
+SYSTEM_STRUCTURE = "Формат: название блюда, ингредиенты, список шагов, время приготовления."
 
 
 def generate_recipe(
@@ -16,6 +16,8 @@ def generate_recipe(
     seed=None,
     presence_penalty=None,
     frequency_penalty=None,
+    structure=None,
+    stop=None,
 ) -> str:
     """Генерирует рецепт на основе списка ингредиентов.
 
@@ -51,6 +53,13 @@ def generate_recipe(
     Returns:
         Сгенерированный рецепт в виде строки.
     """
+
+    system_prompt = SYSTEM_PROMPT
+    if structure is None:
+        system_prompt += SYSTEM_STRUCTURE
+    else:
+        system_prompt += f" Формат: {structure}"
+
     response = litellm.completion(
         model=LLM_MODEL,
         api_key=API_KEY,
@@ -61,8 +70,9 @@ def generate_recipe(
         seed=seed,
         presence_penalty=presence_penalty,
         frequency_penalty=frequency_penalty,
+        stop=stop,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Ингредиенты: {ingredients}"},
         ],
     )

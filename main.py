@@ -40,6 +40,16 @@ def parse_args():
         type=float,
         help="Штраф за повторение токенов по частоте (-2.0–2.0).",
     )
+    parser.add_argument(
+        "--structure",
+        type=str,
+        help="Описание структуры для ответа от LLM",
+    )
+    parser.add_argument(
+        "--stop",
+        type=str,
+        help="Условие завершения для LLM",
+    )
     return parser.parse_args()
 
 
