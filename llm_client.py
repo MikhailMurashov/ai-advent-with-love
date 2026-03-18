@@ -1,14 +1,9 @@
 import litellm
 from config import LLM_MODEL, API_KEY
 
-SYSTEM_PROMPT = (
-    "Ты шеф-повар. Дай краткий рецепт на русском языке на основе названия блюда или указанных ингредиентов."
-)
-SYSTEM_STRUCTURE = "Формат: название блюда, ингредиенты, список шагов, время приготовления."
 
-
-def generate_recipe(
-    ingredients: str,
+def chat(
+    messages: list[dict[str, str]],
     temperature=None,
     top_p=None,
     top_k=None,
@@ -16,13 +11,12 @@ def generate_recipe(
     seed=None,
     presence_penalty=None,
     frequency_penalty=None,
-    structure=None,
     stop=None,
 ) -> str:
     """Генерирует рецепт на основе списка ингредиентов.
 
     Args:
-        ingredients: Список ингредиентов в виде строки, например "курица, рис, лук".
+        messages: Список сообщений в контексте с ролью.
         temperature: Насколько «творчески» модель подбирает слова (0.0–2.0).
             При 0.0 ответ почти всегда одинаковый и предсказуемый.
             При 1.0 — стандартное поведение модели.
@@ -54,12 +48,6 @@ def generate_recipe(
         Сгенерированный рецепт в виде строки.
     """
 
-    system_prompt = SYSTEM_PROMPT
-    if structure is None:
-        system_prompt += SYSTEM_STRUCTURE
-    else:
-        system_prompt += f" Формат: {structure}"
-
     response = litellm.completion(
         model=LLM_MODEL,
         api_key=API_KEY,
@@ -71,9 +59,6 @@ def generate_recipe(
         presence_penalty=presence_penalty,
         frequency_penalty=frequency_penalty,
         stop=stop,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Ингредиенты: {ingredients}"},
-        ],
+        messages=messages,
     )
     return response.choices[0].message.content
