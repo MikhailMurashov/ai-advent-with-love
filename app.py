@@ -1,6 +1,6 @@
 import streamlit as st
 from llm_client import chat
-from config import LLM_MODEL
+from config import MODELS
 
 
 def init_session_state():
@@ -10,10 +10,10 @@ def init_session_state():
         st.session_state.system_prompt = ""
 
 
-def render_sidebar() -> dict:
+def render_sidebar() -> tuple[dict, str]:
     with st.sidebar:
         st.title("Параметры модели")
-        st.caption(f"Модель: `{LLM_MODEL}`")
+        selected_model = MODELS[st.selectbox("Модель", list(MODELS.keys()))]
 
         st.divider()
         st.subheader("Системный промпт")
@@ -86,7 +86,23 @@ def render_sidebar() -> dict:
         n = len(st.session_state.messages)
         st.caption(f"Сообщений: {n}")
 
-    return params
+    return params, selected_model
+
+
+def _stats_caption(
+    elapsed_s: float,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+    total_tokens: int | None,
+) -> str:
+    parts = [f"⏱ {elapsed_s:.2f} с"]
+    if prompt_tokens is not None:
+        parts += [
+            f"📥 {prompt_tokens} пт",
+            f"📤 {completion_tokens} кт",
+            f"Σ {total_tokens}",
+        ]
+    return " · ".join(parts)
 
 
 def render_chat_history():
@@ -94,9 +110,12 @@ def render_chat_history():
         role = msg["role"]
         with st.chat_message(role):
             st.markdown(msg["content"])
+            if role == "assistant" and msg.get("stats"):
+                s = msg["stats"]
+                st.caption(_stats_caption(s["elapsed_s"], s["prompt_tokens"], s["completion_tokens"], s["total_tokens"]))
 
 
-def handle_input(params: dict):
+def handle_input(params: dict, model: str):
     user_input = st.chat_input("Введите сообщение...")
     if not user_input:
         return
@@ -108,17 +127,24 @@ def handle_input(params: dict):
 
     call_messages = [
         {"role": "system", "content": st.session_state.system_prompt}
-    ] + st.session_state.messages
+    ] + [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
 
     active_params = {k: v for k, v in params.items() if v is not None}
-    print(f"[chat] params={active_params}, messages={len(call_messages)}")
+    print(f"[chat] model={model}, params={active_params}, messages={len(call_messages)}")
 
     with st.chat_message("assistant"):
         with st.spinner("Думаю..."):
-            response = chat(call_messages, **params)
-        st.markdown(response)
+            result = chat(call_messages, model=model, **params)
+        st.markdown(result.content)
+        stats = {
+            "elapsed_s": result.elapsed_s,
+            "prompt_tokens": result.prompt_tokens,
+            "completion_tokens": result.completion_tokens,
+            "total_tokens": result.total_tokens,
+        }
+        st.caption(_stats_caption(result.elapsed_s, result.prompt_tokens, result.completion_tokens, result.total_tokens))
 
-    st.session_state.messages.append({"role": "assistant", "content": response})
+    st.session_state.messages.append({"role": "assistant", "content": result.content, "stats": stats})
 
 
 def main():
@@ -130,9 +156,9 @@ def main():
     st.title("Чат с ассистентом")
 
     init_session_state()
-    params = render_sidebar()
+    params, model = render_sidebar()
     render_chat_history()
-    handle_input(params)
+    handle_input(params, model)
 
 
 if __name__ == "__main__":

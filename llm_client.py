@@ -1,9 +1,22 @@
+import time
+from dataclasses import dataclass
+
 import litellm
 from config import LLM_MODEL, API_KEY
 
 
+@dataclass
+class ChatResponse:
+    content: str
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    total_tokens: int | None
+    elapsed_s: float
+
+
 def chat(
     messages: list[dict[str, str]],
+    model=LLM_MODEL,
     temperature=None,
     top_p=None,
     top_k=None,
@@ -12,7 +25,7 @@ def chat(
     presence_penalty=None,
     frequency_penalty=None,
     stop=None,
-) -> str:
+) -> ChatResponse:
     """Простой чат с lmm.
 
     Args:
@@ -45,11 +58,15 @@ def chat(
             добавьте». Обычно достаточно значений 0.1–0.5.
 
     Returns:
-        Сгенерированный рецепт в виде строки.
+        Кортеж (content, usage, elapsed_s):
+          - content: текст ответа
+          - usage: словарь с ключами prompt_tokens, completion_tokens, total_tokens
+          - elapsed_s: время выполнения запроса в секундах
     """
 
+    t0 = time.time()
     response = litellm.completion(
-        model=LLM_MODEL,
+        model=model,
         api_key=API_KEY,
         temperature=temperature,
         top_p=top_p,
@@ -61,4 +78,13 @@ def chat(
         stop=stop,
         messages=messages,
     )
-    return response.choices[0].message.content
+    elapsed_s = time.time() - t0
+
+    u = response.usage  # type: ignore[union-attr]
+    return ChatResponse(
+        content=response.choices[0].message.content,
+        prompt_tokens=u.prompt_tokens if u else None,
+        completion_tokens=u.completion_tokens if u else None,
+        total_tokens=u.total_tokens if u else None,
+        elapsed_s=elapsed_s,
+    )
