@@ -1,9 +1,25 @@
 import streamlit as st
 from agent import Agent
 from config import MODELS
+from storage import delete_context, list_contexts, new_session_id, save_context
 
 
 def init_session_state():
+    if "session_id" not in st.session_state:
+        contexts = list_contexts()
+        if contexts:
+            ctx = contexts[0]
+            st.session_state.session_id = ctx["session_id"]
+            st.session_state.system_prompt = ctx.get("system_prompt", "")
+            st.session_state.selected_model_key = ctx.get("model_key")
+            st.session_state.agent = Agent(system_prompt=st.session_state.system_prompt)
+            st.session_state.agent._history = ctx.get("history", [])
+            st.session_state.message_stats = ctx.get("message_stats", [])
+        else:
+            st.session_state.session_id = new_session_id()
+            st.session_state.system_prompt = ""
+            st.session_state.agent = Agent()
+            st.session_state.message_stats = []
     if "agent" not in st.session_state:
         st.session_state.agent = Agent(system_prompt=st.session_state.get("system_prompt", ""))
     if "system_prompt" not in st.session_state:
@@ -15,7 +31,12 @@ def init_session_state():
 def render_sidebar() -> tuple[dict, str]:
     with st.sidebar:
         st.title("Параметры модели")
-        selected_model = MODELS[st.selectbox("Модель", list(MODELS.keys()))]
+        model_keys = list(MODELS.keys())
+        saved_key = st.session_state.get("selected_model_key")
+        model_index = model_keys.index(saved_key) if saved_key in model_keys else 0
+        selected_model_key = st.selectbox("Модель", model_keys, index=model_index)
+        st.session_state.selected_model_key = selected_model_key
+        selected_model = MODELS[selected_model_key]
 
         st.divider()
         st.subheader("Системный промпт")
@@ -81,13 +102,24 @@ def render_sidebar() -> tuple[dict, str]:
 
         st.divider()
 
+        n = len(st.session_state.agent.history)
+        if n > 0:
+            contexts = list_contexts()
+            ctx_map = {c["session_id"]: c for c in contexts}
+            ctx = ctx_map.get(st.session_state.session_id)
+            if ctx:
+                created = ctx.get("created_at", "")[:16].replace("T", " ")
+                st.caption(f"Контекст от {created}")
+            st.caption(f"Сообщений: {n}")
+        else:
+            st.caption("Новый чат")
+
         if st.button("Сбросить контекст", type="secondary", use_container_width=True):
+            delete_context(st.session_state.session_id)
+            st.session_state.session_id = new_session_id()
             st.session_state.agent = Agent(system_prompt=st.session_state.system_prompt)
             st.session_state.message_stats = []
             st.rerun()
-
-        n = len(st.session_state.agent.history)
-        st.caption(f"Сообщений: {n}")
 
     return params, selected_model
 
@@ -145,6 +177,13 @@ def handle_input(params: dict, model: str):
         }
         st.session_state.message_stats.append(stats)
         st.caption(_stats_caption(result.elapsed_s, result.prompt_tokens, result.completion_tokens, result.total_tokens))
+        save_context(
+            st.session_state.session_id,
+            st.session_state.system_prompt,
+            st.session_state.agent.history,
+            st.session_state.message_stats,
+            model_key=st.session_state.get("selected_model_key"),
+        )
 
 
 def main():
