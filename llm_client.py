@@ -16,15 +16,15 @@ class ChatResponse:
 
 def chat(
     messages: list[dict[str, str]],
-    model=LLM_MODEL,
-    temperature=None,
-    top_p=None,
-    top_k=None,
-    max_tokens=None,
-    seed=None,
-    presence_penalty=None,
-    frequency_penalty=None,
-    stop=None,
+    model: str = LLM_MODEL,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    max_tokens: int | None = None,
+    seed: int | None = None,
+    presence_penalty: float | None = None,
+    frequency_penalty: float | None = None,
+    stop: list[str] | None = None,
 ) -> ChatResponse:
     """Простой чат с lmm.
 
@@ -58,10 +58,12 @@ def chat(
             добавьте». Обычно достаточно значений 0.1–0.5.
 
     Returns:
-        Кортеж (content, usage, elapsed_s):
-          - content: текст ответа
-          - usage: словарь с ключами prompt_tokens, completion_tokens, total_tokens
-          - elapsed_s: время выполнения запроса в секундах
+        ChatResponse с полями:
+          - content (str): текст ответа
+          - prompt_tokens (int): число токенов в запросе
+          - completion_tokens (int): число токенов в ответе
+          - total_tokens (int): суммарное число токенов
+          - elapsed_s (float): время выполнения запроса в секундах
     """
 
     t0 = time.time()
@@ -84,7 +86,7 @@ def chat(
 
     u = response.usage  # type: ignore[union-attr]
     return ChatResponse(
-        content=response.choices[0].message.content,
+        content=response.choices[0].message.content or "",
         prompt_tokens=u.prompt_tokens if u else None,
         completion_tokens=u.completion_tokens if u else None,
         total_tokens=u.total_tokens if u else None,

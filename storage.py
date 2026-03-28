@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -27,8 +28,8 @@ def save_context(
         try:
             existing = json.loads(path.read_text())
             created_at = existing.get("created_at", now)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"storage: {e}")
     data = {
         "session_id": session_id,
         "created_at": created_at,
@@ -50,8 +51,8 @@ def list_contexts() -> list[dict]:
     for f in STORAGE_DIR.glob("*.json"):
         try:
             result.append(json.loads(f.read_text()))
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"storage: {e}")
     return sorted(result, key=lambda d: d.get("updated_at", ""), reverse=True)
 
 

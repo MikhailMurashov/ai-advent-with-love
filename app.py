@@ -1,7 +1,11 @@
+import logging
+
 import streamlit as st
 from agent import Agent
 from config import MODELS
 from storage import delete_context, list_contexts, new_session_id, save_context
+
+logging.basicConfig(level=logging.DEBUG)
 
 
 def init_session_state():
@@ -196,7 +200,7 @@ def handle_input(params: dict, model: str):
     )
 
     active_params = {k: v for k, v in params.items() if v is not None}
-    print(f"[agent] model={model}, params={active_params}")
+    logging.debug(f"[agent] model={model}, params={active_params}")
 
     prev_prompt = (
         st.session_state.message_stats[-1]["prompt_tokens"]

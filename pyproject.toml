@@ -1,5 +1,5 @@
 [project]
-name = "ai-recipes-generator"
+name = "ai-advent-with-love"
 version = "0.3.0"
 description = "AI Advent With Love"
 requires-python = ">=3.14"

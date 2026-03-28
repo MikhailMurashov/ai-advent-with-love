@@ -1,3 +1,5 @@
+import logging
+
 from llm_client import chat, ChatResponse
 
 
@@ -28,11 +30,11 @@ class Agent:
         self._history.append({"role": "user", "content": user_input})
         response = chat(self._build_messages(), **llm_params)
         self._history.append({"role": "assistant", "content": response.content})
-        if response.prompt_tokens:
+        if response.prompt_tokens is not None:
             self.total_prompt_tokens += response.prompt_tokens
-        if response.completion_tokens:
+        if response.completion_tokens is not None:
             self.total_completion_tokens += response.completion_tokens
-        if response.total_tokens:
+        if response.total_tokens is not None:
             self.total_tokens += response.total_tokens
         if len(self._history) > self.CONTEXT_WINDOW and self.summarization_enabled:
             self._update_summary(llm_params.get("model"))
@@ -52,9 +54,12 @@ class Agent:
             )
         else:
             prompt = f"Очень кратко изложи суть следующей беседы, сохранив только самые ключевые факты:\n\n{convo_text}"
-        response = chat([{"role": "user", "content": prompt}], model=model)
-        self._summary = response.content
-        self._summarized_count = len(self._history) - self.CONTEXT_WINDOW
+        try:
+            response = chat([{"role": "user", "content": prompt}], model=model)
+            self._summary = response.content
+            self._summarized_count = len(self._history) - self.CONTEXT_WINDOW
+        except Exception as e:
+            logging.warning(f"agent: summarization failed, skipping: {e}")
 
     def _build_messages(self) -> list[dict[str, str]]:
         messages = []
