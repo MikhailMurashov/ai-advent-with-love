@@ -10,11 +10,11 @@ from storage import (
     get_personalization_path,
     get_user_dir,
     list_contexts,
+    list_users,
     new_session_id,
     register_user,
     save_context,
     save_working_memory,
-    user_exists,
 )
 from strategies import SlidingWindowSummaryStrategy, StrategyType
 
@@ -30,32 +30,37 @@ def render_login_screen():
     st.title("Добро пожаловать")
     st.write("Войдите или зарегистрируйтесь, чтобы начать.")
 
-    username = st.text_input(
-        "Имя пользователя", max_chars=50, key="login_username_input"
-    )
+    existing_users = list_users()
 
-    col1, col2 = st.columns(2)
-    with col1:
+    if existing_users:
+        selected = st.selectbox(
+            "Войти как:",
+            options=existing_users,
+            index=None,
+            placeholder="— выберите пользователя —",
+            key="login_selectbox",
+        )
         if st.button("Войти", use_container_width=True, type="primary"):
-            name = username.strip()
-            if not name:
-                st.error("Введите имя пользователя")
-            elif not user_exists(name):
-                st.error(f"Пользователь «{name}» не найден. Сначала зарегистрируйтесь.")
+            if not selected:
+                st.error("Выберите пользователя из списка")
             else:
-                st.session_state["current_user"] = name
+                st.session_state["current_user"] = selected
                 st.rerun()
 
-    with col2:
-        if st.button("Зарегистрироваться", use_container_width=True):
-            name = username.strip()
-            if not name:
-                st.error("Введите имя пользователя")
-            elif not register_user(name):
-                st.error(f"Имя «{name}» уже занято. Попробуйте другое.")
-            else:
-                st.session_state["current_user"] = name
-                st.rerun()
+        st.divider()
+
+    new_username = st.text_input(
+        "Новое имя пользователя", max_chars=50, key="login_username_input"
+    )
+    if st.button("Зарегистрироваться", use_container_width=True):
+        name = new_username.strip()
+        if not name:
+            st.error("Введите имя пользователя")
+        elif not register_user(name):
+            st.error(f"Имя «{name}» уже занято. Попробуйте другое.")
+        else:
+            st.session_state["current_user"] = name
+            st.rerun()
 
 
 def handle_logout():
