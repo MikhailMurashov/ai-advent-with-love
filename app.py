@@ -79,6 +79,7 @@ def handle_logout():
             strategy_type=agent.strategy_type.value,
             strategy_state=agent.get_strategy_state(),
             working_memory=agent.working_memory.to_state(),
+            task_state=agent.task_state.to_state() if agent.task_state else None,
         )
     st.session_state.clear()
     st.rerun()
@@ -121,6 +122,7 @@ def init_session_state():
                 strategy_type=StrategyType(strategy_type),
                 strategy_state=strategy_state,
                 working_memory_state=ctx.get("working_memory", {}),
+                task_state_data=ctx.get("task_state"),
                 long_term_memory=ltm,
                 personalization=pers,
             )
@@ -154,6 +156,103 @@ def init_session_state():
         st.session_state.system_prompt = ""
     if "message_stats" not in st.session_state:
         st.session_state.message_stats = []
+
+
+# ---------------------------------------------------------------------------
+# Task FSM helpers
+# ---------------------------------------------------------------------------
+
+
+def _save_task_state(agent: Agent) -> None:
+    username = st.session_state.get("current_user")
+    save_context(
+        st.session_state.session_id,
+        st.session_state.get("system_prompt", ""),
+        agent.history,
+        st.session_state.get("message_stats", []),
+        username=username,
+        model_key=st.session_state.get("selected_model_key"),
+        summary=agent.summary,
+        summarized_count=getattr(agent._strategy, "_summarized_count", 0),
+        strategy_type=agent.strategy_type.value,
+        strategy_state=agent.get_strategy_state(),
+        working_memory=agent.working_memory.to_state(),
+        task_state=agent.task_state.to_state() if agent.task_state else None,
+    )
+
+
+def render_task_panel(agent: Agent) -> None:
+    from task_state import STAGE_ORDER, TaskStage, TaskState
+
+    ts = agent.task_state
+
+    # Stage flow visualization
+    cols = st.columns(len(STAGE_ORDER))
+    for i, stage in enumerate(STAGE_ORDER):
+        with cols[i]:
+            if ts.stage == TaskStage.PAUSED and ts.paused_at_stage == stage:
+                st.markdown(f"**⏸ {stage.value}**")
+            elif ts.stage == stage:
+                st.markdown(f"**→ {stage.value}**")
+            else:
+                st.markdown(stage.value)
+
+    if ts.stage == TaskStage.PAUSED:
+        st.warning(
+            f"Пауза — возобновить с «{ts.paused_at_stage.value}», шаг {ts.paused_at_step}"
+        )
+
+    st.caption(f"Шаг: {ts.current_step}")
+
+    new_action = st.text_input(
+        "Ожидаемое действие",
+        value=ts.expected_action,
+        key="task_expected_action",
+    )
+    if new_action != ts.expected_action:
+        ts.expected_action = new_action
+        _save_task_state(agent)
+
+    st.divider()
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if ts.stage != TaskStage.PAUSED:
+            if st.button("Пауза", use_container_width=True, key="task_pause"):
+                ts.pause()
+                _save_task_state(agent)
+                st.rerun()
+        else:
+            if st.button(
+                "Возобновить",
+                use_container_width=True,
+                type="primary",
+                key="task_resume",
+            ):
+                ts.resume()
+                _save_task_state(agent)
+                st.rerun()
+    with c2:
+        if st.button(
+            "Следующий шаг",
+            use_container_width=True,
+            disabled=ts.stage in (TaskStage.PAUSED, TaskStage.DONE),
+            key="task_advance",
+        ):
+            ts.advance()
+            _save_task_state(agent)
+            st.rerun()
+    with c3:
+        if st.button("Сбросить", use_container_width=True, key="task_reset"):
+            agent.task_state = TaskState()
+            _save_task_state(agent)
+            st.rerun()
+
+    st.divider()
+    if st.button("Удалить FSM", use_container_width=True, key="task_delete"):
+        agent.task_state = None
+        _save_task_state(agent)
+        st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +423,24 @@ def render_sidebar() -> tuple[dict, str]:
                     st.rerun()
             else:
                 st.caption("Пусто — кнопка 💾 у сообщений.")
+
+        st.divider()
+        with st.expander("Задача (FSM)", expanded=agent.task_state is not None):
+            if agent.task_state is None:
+                if st.button(
+                    "Начать задачу",
+                    type="primary",
+                    use_container_width=True,
+                    key="task_init",
+                ):
+                    from task_state import TaskState
+
+                    agent.task_state = TaskState()
+                    _save_task_state(agent)
+                    st.rerun()
+                st.caption("FSM отключён. Агент работает без отслеживания этапов.")
+            else:
+                render_task_panel(agent)
 
         st.divider()
         params = {}
@@ -679,6 +796,7 @@ def handle_input(params: dict, model: str):
             strategy_type=agent.strategy_type.value,
             strategy_state=agent.get_strategy_state(),
             working_memory=agent.working_memory.to_state(),
+            task_state=agent.task_state.to_state() if agent.task_state else None,
         )
     st.rerun()
 
