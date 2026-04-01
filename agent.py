@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 from memory import LongTermMemory, WorkingMemory
 from strategies import (
@@ -22,6 +23,7 @@ class Agent:
         strategy_type: StrategyType = StrategyType.SLIDING_WINDOW_SUMMARY,
         strategy_state: dict | None = None,
         working_memory_state: dict | None = None,
+        long_term_memory: LongTermMemory | None = None,
     ) -> None:
         self._base_system_prompt: str = system_prompt
         self.strategy_type: StrategyType = strategy_type
@@ -29,7 +31,11 @@ class Agent:
             strategy_type, system_prompt, strategy_state
         )
         self.working_memory = WorkingMemory()
-        self.long_term_memory = LongTermMemory()
+        self.long_term_memory = (
+            long_term_memory
+            if long_term_memory is not None
+            else LongTermMemory(path=Path(".storage/long_term_memory.json"))
+        )
         if working_memory_state:
             self.working_memory.from_state(working_memory_state)
         logger.info(

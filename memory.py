@@ -5,7 +5,6 @@ from datetime import datetime
 from pathlib import Path
 
 STORAGE_DIR = Path(".storage")
-LONG_TERM_FILE = STORAGE_DIR / "long_term_memory.json"
 
 
 @dataclass
@@ -54,24 +53,25 @@ class WorkingMemory:
 class LongTermMemory:
     """Persistent cross-session memory: user profile, decisions, knowledge."""
 
-    def __init__(self) -> None:
+    def __init__(self, path: Path) -> None:
+        self._path = path
         self._entries: dict[str, MemoryEntry] = {}
         self._load()
 
     def _load(self) -> None:
-        if not LONG_TERM_FILE.exists():
+        if not self._path.exists():
             return
         try:
-            raw = json.loads(LONG_TERM_FILE.read_text())
+            raw = json.loads(self._path.read_text())
             for k, v in raw.items():
                 self._entries[k] = MemoryEntry(**v)
         except Exception as e:
             logging.warning("long_term_memory: load failed: %s", e)
 
     def _save(self) -> None:
-        STORAGE_DIR.mkdir(exist_ok=True)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            LONG_TERM_FILE.write_text(
+            self._path.write_text(
                 json.dumps(
                     {k: asdict(v) for k, v in self._entries.items()},
                     ensure_ascii=False,
