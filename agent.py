@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from memory import LongTermMemory, WorkingMemory
+from memory import LongTermMemory, Personalization, WorkingMemory
 from strategies import (
     BaseStrategy,
     BranchingStrategy,
@@ -24,6 +24,7 @@ class Agent:
         strategy_state: dict | None = None,
         working_memory_state: dict | None = None,
         long_term_memory: LongTermMemory | None = None,
+        personalization: Personalization | None = None,
     ) -> None:
         self._base_system_prompt: str = system_prompt
         self.strategy_type: StrategyType = strategy_type
@@ -35,6 +36,11 @@ class Agent:
             long_term_memory
             if long_term_memory is not None
             else LongTermMemory(path=Path(".storage/long_term_memory.json"))
+        )
+        self.personalization = (
+            personalization
+            if personalization is not None
+            else Personalization(path=Path(".storage/personalization.json"))
         )
         if working_memory_state:
             self.working_memory.from_state(working_memory_state)
@@ -52,6 +58,9 @@ class Agent:
         parts = []
         if self._base_system_prompt:
             parts.append(self._base_system_prompt)
+        pers = self.personalization.to_context_string()
+        if pers:
+            parts.append(f"## Персонализация:\n{pers}")
         wm = self.working_memory.to_context_string()
         if wm:
             parts.append(f"## Рабочая память (текущая задача):\n{wm}")

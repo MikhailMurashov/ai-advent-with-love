@@ -104,3 +104,43 @@ class LongTermMemory:
         if not self._entries:
             return ""
         return "\n".join(f"- {v.value}" for v in self._entries.values())
+
+    def to_state(self) -> dict:
+        return {k: asdict(v) for k, v in self._entries.items()}
+
+    def from_state(self, data: dict) -> None:
+        self._entries = {k: MemoryEntry(**v) for k, v in data.items()}
+
+
+class Personalization:
+    """Persistent free-form user profile text, stored separately from conversations."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self.text: str = ""
+        self._load()
+
+    def _load(self) -> None:
+        if not self._path.exists():
+            return
+        try:
+            raw = json.loads(self._path.read_text())
+            self.text = raw.get("text", "")
+        except Exception as e:
+            logging.warning("personalization: load failed: %s", e)
+
+    def _save(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._path.write_text(
+                json.dumps({"text": self.text}, ensure_ascii=False, indent=2)
+            )
+        except Exception as e:
+            logging.warning("personalization: save failed: %s", e)
+
+    def set_text(self, text: str) -> None:
+        self.text = text
+        self._save()
+
+    def to_context_string(self) -> str:
+        return self.text

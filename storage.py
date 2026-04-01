@@ -18,6 +18,10 @@ def get_user_dir(username: str) -> Path:
     return path
 
 
+def get_personalization_path(username: str) -> Path:
+    return get_user_dir(username) / "personalization.json"
+
+
 def list_users() -> list[str]:
     STORAGE_DIR.mkdir(exist_ok=True)
     if not USERS_FILE.exists():

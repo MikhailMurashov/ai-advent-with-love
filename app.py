@@ -4,9 +4,10 @@ import logging
 import streamlit as st
 from agent import Agent
 from config import MODELS
-from memory import LongTermMemory
+from memory import LongTermMemory, Personalization
 from storage import (
     delete_context,
+    get_personalization_path,
     get_user_dir,
     list_contexts,
     new_session_id,
@@ -87,6 +88,10 @@ def _make_ltm(username: str) -> LongTermMemory:
     return LongTermMemory(path=get_user_dir(username) / "long_term_memory.json")
 
 
+def _make_personalization(username: str) -> Personalization:
+    return Personalization(path=get_personalization_path(username))
+
+
 def init_session_state():
     username = st.session_state["current_user"]
 
@@ -105,12 +110,14 @@ def init_session_state():
                 "history": ctx.get("history", []),
             }
             ltm = _make_ltm(username)
+            pers = _make_personalization(username)
             agent = Agent(
                 system_prompt=st.session_state.system_prompt,
                 strategy_type=StrategyType(strategy_type),
                 strategy_state=strategy_state,
                 working_memory_state=ctx.get("working_memory", {}),
                 long_term_memory=ltm,
+                personalization=pers,
             )
             st.session_state.agent = agent
             st.session_state.message_stats = ctx.get("message_stats", [])
@@ -121,16 +128,22 @@ def init_session_state():
         else:
             st.session_state.session_id = new_session_id()
             st.session_state.system_prompt = ""
-            st.session_state.agent = Agent(long_term_memory=_make_ltm(username))
+            st.session_state.agent = Agent(
+                long_term_memory=_make_ltm(username),
+                personalization=_make_personalization(username),
+            )
             st.session_state.message_stats = []
 
     if "agent" not in st.session_state:
         st.session_state.agent = Agent(
             system_prompt=st.session_state.get("system_prompt", ""),
             long_term_memory=_make_ltm(username),
+            personalization=_make_personalization(username),
         )
-    # Save username to long-term memory so the agent always knows who it's talking to
-    st.session_state.agent.long_term_memory.set("user_login", f"имя пользователя: {username}")
+    # If personalization is empty, pre-fill with username
+    pers = st.session_state.agent.personalization
+    if not pers.text:
+        pers.set_text(f"имя пользователя: {username}")
 
     if "system_prompt" not in st.session_state:
         st.session_state.system_prompt = ""
@@ -230,6 +243,23 @@ def render_sidebar() -> tuple[dict, str]:
         )
 
         # ------------------------------------------------------------------
+        # Personalization panel
+        # ------------------------------------------------------------------
+        st.divider()
+        with st.expander("🪪 Персонализация", expanded=False):
+            st.caption("Информация о вас, которую агент всегда учитывает.")
+            new_text = st.text_area(
+                label="personalization_text",
+                value=agent.personalization.text,
+                height=150,
+                label_visibility="collapsed",
+                placeholder="Например: меня зовут Михаил, я разработчик, предпочитаю краткие ответы",
+                key="personalization_text",
+            )
+            if new_text != agent.personalization.text:
+                agent.personalization.set_text(new_text)
+
+        # ------------------------------------------------------------------
         # Memory panel
         # ------------------------------------------------------------------
         st.divider()
@@ -274,7 +304,7 @@ def render_sidebar() -> tuple[dict, str]:
             st.divider()
 
             # Долговременная
-            st.markdown("**Долговременная** (профиль, знания)")
+            st.markdown("**Долговременная** (знания)")
             if ltm_entries:
                 for entry in ltm_entries.values():
                     st.caption(
@@ -431,6 +461,7 @@ def render_sidebar() -> tuple[dict, str]:
             new_agent = Agent(
                 system_prompt=st.session_state.system_prompt,
                 long_term_memory=agent.long_term_memory,
+                personalization=agent.personalization,
             )
             st.session_state.agent = new_agent
             st.session_state.message_stats = []
