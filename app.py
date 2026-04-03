@@ -191,7 +191,7 @@ def _save_task_state(agent: Agent) -> None:
 
 
 def render_task_panel(agent: Agent) -> None:
-    from task_state import STAGE_ORDER, TaskStage, TaskState
+    from task_state import STAGE_ORDER, TaskState
 
     ts = agent.task_state
 
@@ -204,32 +204,25 @@ def render_task_panel(agent: Agent) -> None:
             else:
                 st.markdown(stage.value)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button(
-            "Следующий этап",
-            use_container_width=True,
-            disabled=ts.stage == TaskStage.DONE,
-            key="task_advance",
-        ):
-            ts.advance()
-            _save_task_state(agent)
-            st.rerun()
-    with c2:
-        if st.button("Сбросить", use_container_width=True, key="task_reset"):
-            agent.task_state = TaskState()
-            _save_task_state(agent)
-            st.rerun()
+    # Transition buttons — only allowed transitions are shown
+    allowed = ts.allowed()
+    if allowed:
+        btn_cols = st.columns(len(allowed))
+        for i, target in enumerate(allowed):
+            with btn_cols[i]:
+                current_idx = STAGE_ORDER.index(ts.stage)
+                target_idx = STAGE_ORDER.index(target)
+                arrow = "→" if target_idx > current_idx else "←"
+                label = f"{arrow} {target.value}"
+                if st.button(label, use_container_width=True, key=f"task_to_{target.value}"):
+                    ts.transition(target)
+                    _save_task_state(agent)
+                    st.rerun()
 
-    if ts.stage == TaskStage.VALIDATION:
-        if st.button(
-            "← Вернуть в EXECUTION",
-            use_container_width=True,
-            key="task_go_back",
-        ):
-            agent.task_state.go_back()
-            _save_task_state(agent)
-            st.rerun()
+    if st.button("Сбросить", use_container_width=True, key="task_reset"):
+        agent.task_state = TaskState()
+        _save_task_state(agent)
+        st.rerun()
 
     if st.button("Удалить FSM", use_container_width=True, key="task_delete"):
         agent.task_state = None

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 
@@ -44,22 +44,46 @@ STAGE_CONTRACTS: dict[TaskStage, str] = {
     ),
 }
 
+
+class TaskFSM:
+    TRANSITIONS: dict[TaskStage, list[TaskStage]] = {
+        TaskStage.PLANNING:   [TaskStage.EXECUTION],
+        TaskStage.EXECUTION:  [TaskStage.VALIDATION],
+        TaskStage.VALIDATION: [TaskStage.DONE, TaskStage.EXECUTION, TaskStage.PLANNING],
+        TaskStage.DONE:       [],
+    }
+
+    def __init__(self, stage: TaskStage = TaskStage.PLANNING) -> None:
+        self.stage = stage
+
+    def can_transition(self, to: TaskStage) -> bool:
+        return to in self.TRANSITIONS.get(self.stage, [])
+
+    def transition(self, to: TaskStage) -> None:
+        if not self.can_transition(to):
+            raise ValueError(
+                f"Недопустимый переход: {self.stage.value} → {to.value}"
+            )
+        self.stage = to
+
+    def allowed(self) -> list[TaskStage]:
+        return list(self.TRANSITIONS.get(self.stage, []))
+
+
 @dataclass
 class TaskState:
     stage: TaskStage = TaskStage.PLANNING
+    _fsm: TaskFSM = field(init=False, repr=False)
 
-    def advance(self) -> None:
-        if self.stage == TaskStage.DONE:
-            return
-        idx = STAGE_ORDER.index(self.stage)
-        if idx < len(STAGE_ORDER) - 1:
-            self.stage = STAGE_ORDER[idx + 1]
+    def __post_init__(self) -> None:
+        self._fsm = TaskFSM(self.stage)
 
-    def go_back(self) -> None:
-        """Вернуться с VALIDATION обратно в EXECUTION."""
-        if self.stage != TaskStage.VALIDATION:
-            return
-        self.stage = TaskStage.EXECUTION
+    def transition(self, to: TaskStage) -> None:
+        self._fsm.transition(to)
+        self.stage = self._fsm.stage
+
+    def allowed(self) -> list[TaskStage]:
+        return self._fsm.allowed()
 
     def to_context_string(self) -> str:
         lines = [
