@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from memory import LongTermMemory, Personalization, WorkingMemory
+from memory import Invariants, LongTermMemory, Personalization, WorkingMemory
 from task_state import TaskState
 from strategies import (
     BaseStrategy,
@@ -27,6 +27,7 @@ class Agent:
         task_state_data: dict | None = None,
         long_term_memory: LongTermMemory | None = None,
         personalization: Personalization | None = None,
+        invariants: Invariants | None = None,
     ) -> None:
         self._base_system_prompt: str = system_prompt
         self.strategy_type: StrategyType = strategy_type
@@ -43,6 +44,11 @@ class Agent:
             personalization
             if personalization is not None
             else Personalization(path=Path(".storage/personalization.json"))
+        )
+        self.invariants = (
+            invariants
+            if invariants is not None
+            else Invariants(path=Path(".storage/invariants.json"))
         )
         if working_memory_state:
             self.working_memory.from_state(working_memory_state)
@@ -61,6 +67,9 @@ class Agent:
 
     def _build_full_system_prompt(self) -> str:
         parts = []
+        inv = self.invariants.to_context_string()
+        if inv:
+            parts.append(inv)
         if self._base_system_prompt:
             parts.append(self._base_system_prompt)
         pers = self.personalization.to_context_string()
