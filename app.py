@@ -4,9 +4,10 @@ import logging
 import streamlit as st
 from agent import Agent
 from config import MODELS
-from memory import LongTermMemory, Personalization
+from memory import Invariants, LongTermMemory, Personalization
 from storage import (
     delete_context,
+    get_invariants_path,
     get_personalization_path,
     get_user_dir,
     list_contexts,
@@ -99,6 +100,10 @@ def _make_personalization(username: str) -> Personalization:
     return Personalization(path=get_personalization_path(username))
 
 
+def _make_invariants(username: str) -> Invariants:
+    return Invariants(path=get_invariants_path(username))
+
+
 def init_session_state():
     username = st.session_state["current_user"]
 
@@ -126,6 +131,7 @@ def init_session_state():
                 task_state_data=ctx.get("task_state"),
                 long_term_memory=ltm,
                 personalization=pers,
+                invariants=_make_invariants(username),
             )
             st.session_state.agent = agent
             st.session_state.message_stats = ctx.get("message_stats", [])
@@ -139,6 +145,7 @@ def init_session_state():
             st.session_state.agent = Agent(
                 long_term_memory=_make_ltm(username),
                 personalization=_make_personalization(username),
+                invariants=_make_invariants(username),
             )
             st.session_state.message_stats = []
 
@@ -147,6 +154,7 @@ def init_session_state():
             system_prompt=st.session_state.get("system_prompt", ""),
             long_term_memory=_make_ltm(username),
             personalization=_make_personalization(username),
+            invariants=_make_invariants(username),
         )
     # If personalization is empty, pre-fill with username
     pers = st.session_state.agent.personalization
@@ -331,11 +339,47 @@ def render_sidebar() -> tuple[dict, str]:
                 value=agent.personalization.text,
                 height=150,
                 label_visibility="collapsed",
-                placeholder="Например: меня зовут Михаил, я разработчик, предпочитаю краткие ответы",
                 key="personalization_text",
             )
             if new_text != agent.personalization.text:
                 agent.personalization.set_text(new_text)
+
+        # ------------------------------------------------------------------
+        # Invariants panel
+        # ------------------------------------------------------------------
+        st.divider()
+        inv_entries = agent.invariants.entries
+        inv_label = f"🔒 Инварианты · {len(inv_entries)}"
+        with st.expander(inv_label, expanded=len(inv_entries) > 0):
+            st.caption(
+                "Жёсткие правила, которые ассистент никогда не нарушает. "
+                "Инъектируются в начало системного промпта."
+            )
+            if inv_entries:
+                for entry_id, entry in list(inv_entries.items()):
+                    col1, col2 = st.columns([5, 1])
+                    with col1:
+                        st.caption(
+                            entry.text[:100] + ("…" if len(entry.text) > 100 else "")
+                        )
+                    with col2:
+                        if st.button("✕", key=f"inv_del_{entry_id}", help="Удалить"):
+                            agent.invariants.remove(entry_id)
+                            st.rerun()
+                st.divider()
+            new_inv_text = st.text_area(
+                label="inv_text",
+                label_visibility="collapsed",
+                height=80,
+                key="new_inv_text",
+            )
+            if st.button("Добавить", use_container_width=True, key="inv_add"):
+                text = (new_inv_text or "").strip()
+                if text:
+                    agent.invariants.add(text)
+                    st.rerun()
+                else:
+                    st.warning("Введите текст правила")
 
         # ------------------------------------------------------------------
         # Memory panel
@@ -558,6 +602,7 @@ def render_sidebar() -> tuple[dict, str]:
                 system_prompt=st.session_state.system_prompt,
                 long_term_memory=agent.long_term_memory,
                 personalization=agent.personalization,
+                invariants=agent.invariants,
             )
             st.session_state.agent = new_agent
             st.session_state.message_stats = []

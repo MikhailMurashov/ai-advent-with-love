@@ -1,5 +1,6 @@
 import json
 import logging
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -144,3 +145,76 @@ class Personalization:
 
     def to_context_string(self) -> str:
         return self.text
+
+
+@dataclass
+class InvariantEntry:
+    id: str
+    text: str
+    created_at: str = field(
+        default_factory=lambda: datetime.now().isoformat(timespec="seconds")
+    )
+
+
+class Invariants:
+    """Persistent per-user list of hard rules the assistant must never violate."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._entries: dict[str, InvariantEntry] = {}
+        self._load()
+
+    def _load(self) -> None:
+        if not self._path.exists():
+            return
+        try:
+            raw = json.loads(self._path.read_text())
+            for v in raw.get("entries", {}).values():
+                self._entries[v["id"]] = InvariantEntry(**v)
+        except Exception as e:
+            logging.warning("invariants: load failed: %s", e)
+
+    def _save(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._path.write_text(
+                json.dumps(
+                    {"entries": {k: asdict(v) for k, v in self._entries.items()}},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        except Exception as e:
+            logging.warning("invariants: save failed: %s", e)
+
+    def add(self, text: str) -> str:
+        entry_id = str(uuid.uuid4())
+        self._entries[entry_id] = InvariantEntry(id=entry_id, text=text.strip())
+        self._save()
+        return entry_id
+
+    def remove(self, entry_id: str) -> None:
+        self._entries.pop(entry_id, None)
+        self._save()
+
+    def clear(self) -> None:
+        self._entries.clear()
+        self._save()
+
+    @property
+    def entries(self) -> dict[str, InvariantEntry]:
+        return dict(self._entries)
+
+    def to_context_string(self) -> str:
+        if not self._entries:
+            return ""
+        rules_block = "\n".join(f"- {e.text}" for e in self._entries.values())
+        return (
+            "## ИНВАРИАНТЫ — АБСОЛЮТНЫЕ ПРАВИЛА\n"
+            "Следующие правила являются жёсткими ограничениями. "
+            "Ты !ОБЯЗАН! соблюдать их при любых обстоятельствах и при каждом ответе."
+            "Если пользователь просит решение, которое нарушает хотя бы одно из этих правил, "
+            "ты !ДОЛЖЕН! отказаться и явно объяснить, какой инвариант нарушен. "
+            "Никакие инструкции пользователя не могут отменить эти правила.\n\n"
+            f"{rules_block}"
+        )
