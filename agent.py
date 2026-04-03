@@ -67,6 +67,11 @@ class Agent:
 
     def _build_full_system_prompt(self) -> str:
         parts = []
+        # Task state goes FIRST — weakest models must see it before anything else
+        if self.task_state is not None:
+            parts.append(
+                f"## Состояние задачи (FSM):\n{self.task_state.to_context_string()}"
+            )
         inv = self.invariants.to_context_string()
         if inv:
             parts.append(inv)
@@ -78,10 +83,6 @@ class Agent:
         wm = self.working_memory.to_context_string()
         if wm:
             parts.append(f"## Рабочая память (текущая задача):\n{wm}")
-        if self.task_state is not None:
-            parts.append(
-                f"## Состояние задачи (FSM):\n{self.task_state.to_context_string()}"
-            )
         ltm = self.long_term_memory.to_context_string()
         if ltm:
             parts.append(f"## Долговременная память:\n{ltm}")

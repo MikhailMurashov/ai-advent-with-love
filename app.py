@@ -18,7 +18,15 @@ from storage import (
     save_working_memory,
 )
 from strategies import SlidingWindowSummaryStrategy, StrategyType
+from task_state import TaskStage, parse_transition_suggestion, strip_transition_marker
 
+_CONTINUATION_MESSAGES: dict[tuple[TaskStage, TaskStage], str] = {
+    (TaskStage.PLANNING,   TaskStage.EXECUTION):  "Приступай к реализации согласованного плана.",
+    (TaskStage.EXECUTION,  TaskStage.VALIDATION): "Проверь результаты по критериям готовности из плана.",
+    (TaskStage.VALIDATION, TaskStage.DONE):       "Подведи итог работы.",
+    (TaskStage.VALIDATION, TaskStage.EXECUTION):  "Исправь замеченные проблемы и продолжи реализацию.",
+    (TaskStage.VALIDATION, TaskStage.PLANNING):   "Пересмотри план — что нужно изменить в задаче?",
+}
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -214,7 +222,9 @@ def render_task_panel(agent: Agent) -> None:
                 target_idx = STAGE_ORDER.index(target)
                 arrow = "→" if target_idx > current_idx else "←"
                 label = f"{arrow} {target.value}"
-                if st.button(label, use_container_width=True, key=f"task_to_{target.value}"):
+                if st.button(
+                    label, use_container_width=True, key=f"task_to_{target.value}"
+                ):
                     ts.transition(target)
                     _save_task_state(agent)
                     st.rerun()
@@ -228,6 +238,29 @@ def render_task_panel(agent: Agent) -> None:
         agent.task_state = None
         _save_task_state(agent)
         st.rerun()
+
+
+def render_pending_transition(agent: Agent) -> None:
+    """Показывает кнопку подтверждения перехода, если ассистент предложил его в последнем сообщении."""
+    if agent.task_state is None:
+        return
+    ts = agent.task_state
+    for msg in reversed(agent.history):
+        if msg["role"] == "assistant":
+            suggestion = parse_transition_suggestion(msg["content"])
+            if suggestion and suggestion in ts.allowed():
+                if st.button(
+                    f"→ {suggestion.value} — подтвердить",
+                    type="primary",
+                    key=f"pending_transition_{suggestion.value}",
+                ):
+                    continuation = _CONTINUATION_MESSAGES.get((ts.stage, suggestion))
+                    ts.transition(suggestion)
+                    _save_task_state(agent)
+                    if continuation:
+                        st.session_state["pending_auto_message"] = continuation
+                    st.rerun()
+            break
 
 
 # ---------------------------------------------------------------------------
@@ -635,22 +668,24 @@ def _render_msg(
     msg: dict,
     stats_list: list,
     assistant_idx: int,
+    msg_idx: int = 0,
     dimmed: bool = False,
     agent: Agent | None = None,
 ) -> int:
     """Render a single chat message. Returns updated assistant_idx."""
     username = st.session_state.get("current_user")
     content = msg["content"]
-    key_suffix = hashlib.md5(content.encode()).hexdigest()[:8]
+    key_suffix = f"{msg_idx}_{hashlib.md5(content.encode()).hexdigest()[:8]}"
 
+    display_content = strip_transition_marker(content) or content
     with st.chat_message(msg["role"]):
         if dimmed:
             st.markdown(
-                f'<div style="opacity:0.4">{content}</div>',
+                f'<div style="opacity:0.4">{display_content}</div>',
                 unsafe_allow_html=True,
             )
         else:
-            st.markdown(content)
+            st.markdown(display_content)
         if msg["role"] == "assistant" and assistant_idx < len(stats_list):
             s = stats_list[assistant_idx]
             delta_in = s.get("delta_prompt_tokens", s["prompt_tokens"])
@@ -704,31 +739,31 @@ def render_chat_history():
 
     if agent.strategy_type == StrategyType.SLIDING_WINDOW_SUMMARY:
         summarized_count = agent.summarized_count
-        for msg in history[:summarized_count]:
-            assistant_idx = _render_msg(msg, stats_list, assistant_idx, dimmed=True)
+        for i, msg in enumerate(history[:summarized_count]):
+            assistant_idx = _render_msg(msg, stats_list, assistant_idx, msg_idx=i, dimmed=True)
         if agent.summary:
             st.info(f"**Краткое содержание:**\n\n{agent.summary}")
-        for msg in history[summarized_count:]:
-            assistant_idx = _render_msg(msg, stats_list, assistant_idx, agent=agent)
+        for i, msg in enumerate(history[summarized_count:], start=summarized_count):
+            assistant_idx = _render_msg(msg, stats_list, assistant_idx, msg_idx=i, agent=agent)
 
     elif agent.strategy_type == StrategyType.SLIDING_WINDOW:
         window_size = agent._strategy._window_size
         cutoff = max(0, len(history) - window_size)
-        for msg in history[:cutoff]:
-            assistant_idx = _render_msg(msg, stats_list, assistant_idx, dimmed=True)
-        for msg in history[cutoff:]:
-            assistant_idx = _render_msg(msg, stats_list, assistant_idx, agent=agent)
+        for i, msg in enumerate(history[:cutoff]):
+            assistant_idx = _render_msg(msg, stats_list, assistant_idx, msg_idx=i, dimmed=True)
+        for i, msg in enumerate(history[cutoff:], start=cutoff):
+            assistant_idx = _render_msg(msg, stats_list, assistant_idx, msg_idx=i, agent=agent)
 
     elif agent.strategy_type == StrategyType.STICKY_FACTS:
         window_size = agent._strategy._window_size
         cutoff = max(0, len(history) - window_size)
-        for msg in history[:cutoff]:
-            assistant_idx = _render_msg(msg, stats_list, assistant_idx, dimmed=True)
+        for i, msg in enumerate(history[:cutoff]):
+            assistant_idx = _render_msg(msg, stats_list, assistant_idx, msg_idx=i, dimmed=True)
         facts = agent.facts
         if facts:
             st.info(f"**Известные факты:**\n\n{facts}")
-        for msg in history[cutoff:]:
-            assistant_idx = _render_msg(msg, stats_list, assistant_idx, agent=agent)
+        for i, msg in enumerate(history[cutoff:], start=cutoff):
+            assistant_idx = _render_msg(msg, stats_list, assistant_idx, msg_idx=i, agent=agent)
 
     elif agent.strategy_type == StrategyType.BRANCHING:
         bid = agent.active_branch_id
@@ -736,20 +771,89 @@ def render_chat_history():
         if bid and bid in branches:
             branch = branches[bid]
             checkpoint = branch.checkpoint_index
-            for msg in history[:checkpoint]:
-                assistant_idx = _render_msg(msg, stats_list, assistant_idx, dimmed=True)
+            for i, msg in enumerate(history[:checkpoint]):
+                assistant_idx = _render_msg(msg, stats_list, assistant_idx, msg_idx=i, dimmed=True)
             st.divider()
             st.caption(f"↳ Ветка: {branch.name}")
-            for msg in history[checkpoint:]:
-                assistant_idx = _render_msg(msg, stats_list, assistant_idx, agent=agent)
+            for i, msg in enumerate(history[checkpoint:], start=checkpoint):
+                assistant_idx = _render_msg(msg, stats_list, assistant_idx, msg_idx=i, agent=agent)
         else:
             st.caption("Ветка: Ствол")
-            for msg in history:
-                assistant_idx = _render_msg(msg, stats_list, assistant_idx, agent=agent)
+            for i, msg in enumerate(history):
+                assistant_idx = _render_msg(msg, stats_list, assistant_idx, msg_idx=i, agent=agent)
 
     else:
-        for msg in history:
-            assistant_idx = _render_msg(msg, stats_list, assistant_idx, agent=agent)
+        for i, msg in enumerate(history):
+            assistant_idx = _render_msg(msg, stats_list, assistant_idx, msg_idx=i, agent=agent)
+
+
+def handle_auto_continue(params: dict, model: str) -> None:
+    """Автоматически продолжает работу после подтверждённого перехода."""
+    auto_message = st.session_state.pop("pending_auto_message", None)
+    if not auto_message:
+        return
+
+    username = st.session_state["current_user"]
+    agent = st.session_state.agent
+    agent.system_prompt = st.session_state.system_prompt
+
+    if agent.strategy_type == StrategyType.SLIDING_WINDOW_SUMMARY:
+        agent.summarization_enabled = st.session_state.get("use_summary", True)
+
+    active_params = {k: v for k, v in params.items() if v is not None}
+
+    # Strip the transition marker from the last assistant message so the model
+    # doesn't pattern-match it and repeat it in the next response.
+    for msg in reversed(agent.history):
+        if msg["role"] == "assistant":
+            msg["content"] = strip_transition_marker(msg["content"])
+            break
+
+    prev_prompt = (
+        st.session_state.message_stats[-1]["prompt_tokens"]
+        if st.session_state.message_stats
+        else 0
+    )
+
+    with st.chat_message("user"):
+        st.markdown(f"*{auto_message}*")
+
+    with st.chat_message("assistant"):
+        with st.spinner("Думаю..."):
+            result = agent.run(auto_message, model=model, **active_params)
+        display_content = strip_transition_marker(result.content) or result.content
+        st.markdown(display_content)
+        delta_prompt = max(0, (result.prompt_tokens or 0) - (prev_prompt or 0))
+        delta_total = delta_prompt + (result.completion_tokens or 0)
+        stats = {
+            "elapsed_s": result.elapsed_s,
+            "prompt_tokens": result.prompt_tokens,
+            "completion_tokens": result.completion_tokens,
+            "total_tokens": result.total_tokens,
+            "delta_prompt_tokens": delta_prompt,
+        }
+        st.session_state.message_stats.append(stats)
+        st.caption(
+            _stats_caption(
+                result.elapsed_s, delta_prompt, result.completion_tokens, delta_total
+            )
+        )
+        save_context(
+            st.session_state.session_id,
+            st.session_state.system_prompt,
+            agent.history,
+            st.session_state.message_stats,
+            username=username,
+            model_key=st.session_state.get("selected_model_key"),
+            summary=agent.summary,
+            summarized_count=getattr(agent._strategy, "_summarized_count", 0),
+            strategy_type=agent.strategy_type.value,
+            strategy_state=agent.get_strategy_state(),
+            working_memory=agent.working_memory.to_state(),
+            task_state=agent.task_state.to_state() if agent.task_state else None,
+        )
+
+    st.rerun()
 
 
 def handle_input(params: dict, model: str):
@@ -780,7 +884,7 @@ def handle_input(params: dict, model: str):
     with st.chat_message("assistant"):
         with st.spinner("Думаю..."):
             result = agent.run(user_input, model=model, **active_params)
-        display_content = result.content
+        display_content = strip_transition_marker(result.content) or result.content
         st.markdown(display_content)
         delta_prompt = max(0, (result.prompt_tokens or 0) - (prev_prompt or 0))
         delta_total = delta_prompt + (result.completion_tokens or 0)
@@ -839,7 +943,7 @@ def main():
         unsafe_allow_html=True,
     )
 
-    st.session_state["current_user"] = 'Михаил'
+    st.session_state["current_user"] = "Михаил"
 
     if not st.session_state.get("current_user"):
         render_login_screen()
@@ -850,6 +954,8 @@ def main():
     init_session_state()
     params, model = render_sidebar()
     render_chat_history()
+    render_pending_transition(st.session_state.agent)
+    handle_auto_continue(params, model)
     handle_input(params, model)
 
 
