@@ -70,6 +70,12 @@ class APIClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def get_messages(self, session_id: str) -> list[dict]:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{self._base_url}/sessions/{session_id}/messages")
+            resp.raise_for_status()
+            return resp.json()
+
     async def delete_session(self, session_id: str) -> None:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.delete(f"{self._base_url}/sessions/{session_id}")

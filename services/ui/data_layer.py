@@ -70,7 +70,10 @@ class APIDataLayer(cl_data.BaseDataLayer):
     async def get_thread(self, thread_id: str) -> Optional[ThreadDict]:
         try:
             s = await self._client.get_session(thread_id)
-            return _session_to_thread(s) if s else None
+            if s is None:
+                return None
+            messages = await self._client.get_messages(thread_id)
+            return _session_to_thread(s, messages)
         except Exception:
             return None
 
@@ -135,7 +138,20 @@ class APIDataLayer(cl_data.BaseDataLayer):
         return []
 
 
-def _session_to_thread(s: dict) -> ThreadDict:
+def _session_to_thread(s: dict, messages: list[dict] | None = None) -> ThreadDict:
+    steps = []
+    for msg in (messages or []):
+        if msg["role"] not in ("user", "assistant"):
+            continue
+        steps.append({
+            "id": msg["id"],
+            "threadId": s["id"],
+            "type": "user_message" if msg["role"] == "user" else "assistant_message",
+            "output": msg["content"] or "",
+            "createdAt": msg["created_at"],
+            "name": "User" if msg["role"] == "user" else "Assistant",
+            "isError": False,
+        })
     return ThreadDict(
         id=s["id"],
         createdAt=s["created_at"],
@@ -144,7 +160,7 @@ def _session_to_thread(s: dict) -> ThreadDict:
         userIdentifier="guest",
         tags=None,
         metadata={},
-        steps=[],
+        steps=steps,
         elements=None,
     )
 

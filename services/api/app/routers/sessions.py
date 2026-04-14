@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.dependencies import get_session_repo
-from app.interfaces.repositories import ISessionRepository, SessionInfo
+from app.interfaces.repositories import ISessionRepository, Message, SessionInfo
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -29,6 +29,17 @@ async def get_session(
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+@router.get("/{session_id}/messages", response_model=None)
+async def get_session_messages(
+    session_id: str,
+    session_repo: Annotated[ISessionRepository, Depends(get_session_repo)],
+) -> list[Message]:
+    session = await session_repo.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return await session_repo.get_messages(session_id)
 
 
 @router.post("", response_model=None, status_code=201)
