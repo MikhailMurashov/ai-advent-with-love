@@ -1,0 +1,38 @@
+services:
+  mcp-weather:
+    build:
+      context: ./services/mcp-weather
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./services/api
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mcp-weather
+    volumes:
+      - ./data:/app/data
+    environment:
+      - LLM_MODEL=${LLM_MODEL:-gigachat/GigaChat-2-Pro}
+      - API_KEY=${API_KEY:-}
+      - GIGACHAT_CREDENTIALS=${GIGACHAT_CREDENTIALS:-}
+      - GIGACHAT_SCOPE=${GIGACHAT_SCOPE:-GIGACHAT_API_PERSONAL}
+      - SQLITE_PATH=/app/data/db.sqlite
+      - MCP_CONFIG_PATH=/app/mcp_config.yaml
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ./services/ui
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    environment:
+      - API_URL=http://api:8000
+      - DEFAULT_MODEL=${LLM_MODEL:-gigachat/GigaChat-2}
+      - CHAINLIT_AUTH_SECRET=${CHAINLIT_AUTH_SECRET:-EahjBaVnGvFWM_iLp64PwGp4c3VYtfMjVvfriJiSDEI}
+    restart: unless-stopped

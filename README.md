@@ -1,46 +1,81 @@
-# LLM Чат
+# AI Advent With Love
 
-Streamlit-чат с поддержкой любых LLM через litellm (OpenAI, Anthropic, HuggingFace и др.).
+Микросервисный AI-чат с поддержкой tool calling через MCP.
 
-## Возможности
+## Стек
 
-- Поддержка любых LLM через litellm (GigaChat, Claude, GPT и др.)
-- Скользящее окно контекста (5 сообщений) с авто-саммаризацией
-- Счётчик токенов на каждое сообщение и накопленным итогом
-- Настройка параметров генерации (temperature, top_p, max_tokens, seed, штрафы)
-- Сохранение сессии между перезапусками (`.storage/*.json`)
-- Сброс контекста одной кнопкой
+| Сервис | Технологии | Порт |
+|---|---|---|
+| `services/api` | FastAPI + SQLAlchemy async + litellm | 8000 |
+| `services/mcp-weather` | FastAPI MCP + Open-Meteo | 8001 |
+| `services/ui` | Chainlit | 8501 |
+
+## Быстрый старт
+
+```bash
+cp services/api/.env.example services/api/.env
+# Заполнить LLM_MODEL, API_KEY (и GIGACHAT_CREDENTIALS если нужно)
+
+docker-compose up --build
+```
+
+Открыть http://localhost:8501
+
+## Переменные окружения
+
+| Переменная | Назначение |
+|---|---|
+| `LLM_MODEL` | litellm model string: `gigachat/GigaChat-2-Pro`, `claude-haiku-4-5`, `gpt-4o` |
+| `API_KEY` | API ключ для выбранного провайдера |
+| `GIGACHAT_CREDENTIALS` | Base64 credentials для GigaChat (если используется) |
 
 ## Архитектура
 
-Проект состоит из пяти модулей. `config.py` загружает переменные окружения и экспортирует модель и ключ API. `llm_client.py` оборачивает `litellm.completion()` и возвращает `ChatResponse` с текстом и статистикой токенов. `agent.py` управляет историей диалога, скользящим окном контекста и авто-саммаризацией. `storage.py` сохраняет и загружает сессии из `.storage/*.json`. `app.py` предоставляет Streamlit-интерфейс, вызывает `Agent.run()` и сохраняет состояние через `storage.py`.
+```
+services/
+├── api/                        # FastAPI backend
+│   └── app/
+│       ├── agent/              # Бизнес-логика (strategies, memory, mcp_client, agent)
+│       ├── infrastructure/     # LiteLLMClient, SSETransport
+│       ├── interfaces/         # Protocol-интерфейсы (ILLMClient, IMCPTransport, репозитории)
+│       ├── db/                 # SQLAlchemy модели + репозитории (SQLite)
+│       ├── routers/            # HTTP/WS эндпоинты (users, sessions, chat)
+│       ├── dependencies.py     # FastAPI DI
+│       ├── config.py           # Pydantic Settings
+│       └── main.py             # FastAPI app + startup
+├── mcp-weather/                # MCP-сервер погоды (Open-Meteo)
+└── ui/                         # Chainlit UI
+```
 
-## Установка
+### Поток данных
+
+```
+Chainlit UI → WebSocket /ws/chat/{session_id}
+                   ↓
+             FastAPI (agent.py)
+              ├── IMemoryRepository → SQLite
+              ├── ISessionRepository → SQLite
+              ├── ILLMClient (litellm) → LLM provider
+              └── MCPClient → SSETransport → mcp-weather:8001
+```
+
+## Smoke Test
 
 ```bash
+docker-compose up --build
+# 1. Открыть http://localhost:8501
+# 2. Ввести username → создаётся пользователь в SQLite
+# 3. "какая погода в Москве?" → agent вызывает weather tool → ответ
+# 4. Sidebar: сессия появилась
+# 5. Новая сессия → вернуться к старой → история загружается
+# 6. ChatSettings → изменить температуру → следующий ответ другой
+```
+
+## Локальная разработка (API)
+
+```bash
+cd services/api
 uv sync
 cp .env.example .env
-```
-
-## Настройка `.env`
-
-```env
-LLM_MODEL=huggingface/meta-llama/Llama-4-Scout-17B-16E-Instruct
-# LLM_MODEL=claude-haiku-4-5
-# LLM_MODEL=gpt-4o
-
-API_KEY=your_key_here
-```
-
-## Запуск
-
-```bash
-uv run streamlit run app.py
-```
-
-## Линтинг
-
-```bash
-uv run ruff check . --fix
-uv run black .
+uv run uvicorn app.main:app --reload
 ```

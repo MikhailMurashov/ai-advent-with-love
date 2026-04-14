@@ -1,0 +1,4 @@
+servers:
+  - name: weather
+    url: http://mcp-weather:8001/sse
+    description: "Weather tools via OpenMeteo"
