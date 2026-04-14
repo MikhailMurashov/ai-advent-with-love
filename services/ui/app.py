@@ -143,7 +143,7 @@ async def on_message(message: cl.Message) -> None:
         params["temperature"] = float(temperature)
 
     response_msg = cl.Message(content="")
-    await response_msg.send()
+    response_msg_sent = False
 
     try:
         async for event in client.stream_chat(
@@ -153,21 +153,19 @@ async def on_message(message: cl.Message) -> None:
             params=params,
         ):
             if event.type == "token":
+                if not response_msg_sent:
+                    await response_msg.send()
+                    response_msg_sent = True
                 await response_msg.stream_token(event.content)
-            elif event.type == "tool_call":
-                await cl.Message(
-                    content=f"🔧 Вызов инструмента: **{event.name}**\n```json\n{event.args}\n```",
-                    author="tool",
-                ).send()
-            elif event.type == "tool_result":
-                await cl.Message(
-                    content=f"✅ Результат **{event.name}**:\n{event.content}",
-                    author="tool",
-                ).send()
+            elif event.type == "tool_step":
+                async with cl.Step(name=event.name, type="tool") as step:
+                    step.input = event.args
+                    step.output = event.content
             elif event.type == "error":
                 await cl.Message(content=f"Ошибка: {event.message}").send()
                 break
             elif event.type == "done":
-                await response_msg.update()
+                if response_msg_sent:
+                    await response_msg.update()
     except Exception as e:
         await cl.Message(content=f"Ошибка соединения: {e}").send()

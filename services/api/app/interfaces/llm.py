@@ -6,7 +6,7 @@ from typing import AsyncGenerator, Protocol, runtime_checkable
 
 @dataclass
 class ChatEvent:
-    type: str  # "token" | "tool_call" | "tool_result" | "done" | "error"
+    type: str  # "token" | "tool_call" | "tool_result" | "tool_step" | "done" | "error"
     content: str = ""
     name: str = ""
     args: dict = field(default_factory=dict)

@@ -148,10 +148,25 @@ class Agent:
         messages_db = await self._session_repo.get_messages(session_id)
         self._strategy._history = []
         for msg in messages_db:
-            if msg.role in ("user", "assistant", "tool"):
+            if msg.role == "assistant":
+                entry: dict = {"role": "assistant", "content": msg.content}
+                if msg.tool_calls:
+                    try:
+                        entry["tool_calls"] = json.loads(msg.tool_calls)
+                    except json.JSONDecodeError:
+                        pass
+                self._strategy._history.append(entry)
+            elif msg.role == "tool":
+                # tool_calls field stores the tool_call_id for tool-result messages
                 self._strategy._history.append(
-                    {"role": msg.role, "content": msg.content}
+                    {
+                        "role": "tool",
+                        "tool_call_id": msg.tool_calls or "",
+                        "content": msg.content,
+                    }
                 )
+            elif msg.role == "user":
+                self._strategy._history.append({"role": "user", "content": msg.content})
 
         # Save user message
         user_msg = Message(
@@ -184,11 +199,11 @@ class Agent:
         total_prompt_tokens = 0
         total_completion_tokens = 0
         assistant_content = ""
-        assistant_tool_calls: list[dict] = []
 
         while True:
             pending_tool_calls: list[dict] = []
             current_content = ""
+            buffered_token_events: list[ChatEvent] = []
 
             async for event in self._llm.stream_chat(
                 messages=llm_messages,
@@ -198,7 +213,7 @@ class Agent:
             ):
                 if event.type == "token":
                     current_content += event.content
-                    yield event
+                    buffered_token_events.append(event)
                 elif event.type == "tool_call":
                     pending_tool_calls.append(
                         {
@@ -207,7 +222,6 @@ class Agent:
                             "args": event.args,
                         }
                     )
-                    yield event
                 elif event.type == "done":
                     total_prompt_tokens += event.stats.get("prompt_tokens", 0)
                     total_completion_tokens += event.stats.get("completion_tokens", 0)
@@ -216,10 +230,41 @@ class Agent:
                     return
 
             if not pending_tool_calls:
+                # No tool calls: stream the buffered tokens and finish
+                for te in buffered_token_events:
+                    yield te
                 assistant_content = current_content
                 break
 
-            # Execute tool calls
+            # Build tool_calls list for assistant message
+            tool_calls_list = [
+                {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": json.dumps(tc["args"]),
+                    },
+                }
+                for tc in pending_tool_calls
+            ]
+
+            # Save assistant message with tool_calls to DB
+            await self._session_repo.save_message(
+                Message(
+                    id=str(uuid.uuid4()),
+                    session_id=session_id,
+                    role="assistant",
+                    content=current_content or None,
+                    tool_calls=json.dumps(tool_calls_list, ensure_ascii=False),
+                    tokens_prompt=None,
+                    tokens_completion=None,
+                    elapsed_s=None,
+                    created_at=_now(),
+                )
+            )
+
+            # Execute tool calls and yield a single tool_step per call (input + output together)
             tool_results: list[dict] = []
             for tc in pending_tool_calls:
                 result = await self._mcp_client.call_tool(tc["name"], tc["args"])
@@ -230,32 +275,37 @@ class Agent:
                         "result": result,
                     }
                 )
+                # Save tool result to DB (tool_calls field stores tool_call_id)
+                await self._session_repo.save_message(
+                    Message(
+                        id=str(uuid.uuid4()),
+                        session_id=session_id,
+                        role="tool",
+                        content=result,
+                        tool_calls=tc["id"],
+                        tokens_prompt=None,
+                        tokens_completion=None,
+                        elapsed_s=None,
+                        created_at=_now(),
+                    )
+                )
                 yield ChatEvent(
-                    type="tool_result",
+                    type="tool_step",
                     name=tc["name"],
+                    args=tc["args"],
                     tool_call_id=tc["id"],
                     content=result,
                 )
 
-            # Add assistant turn with tool_calls to messages
+            # Add assistant turn with tool_calls to llm_messages
             llm_messages.append(
                 {
                     "role": "assistant",
                     "content": current_content or None,
-                    "tool_calls": [
-                        {
-                            "id": tc["id"],
-                            "type": "function",
-                            "function": {
-                                "name": tc["name"],
-                                "arguments": json.dumps(tc["args"]),
-                            },
-                        }
-                        for tc in pending_tool_calls
-                    ],
+                    "tool_calls": tool_calls_list,
                 }
             )
-            # Add tool results
+            # Add tool results to llm_messages
             for tr in tool_results:
                 llm_messages.append(
                     {
@@ -267,18 +317,13 @@ class Agent:
 
         elapsed_s = time.time() - t0
 
-        # Save assistant message
-        tool_calls_json = (
-            json.dumps(assistant_tool_calls, ensure_ascii=False)
-            if assistant_tool_calls
-            else None
-        )
+        # Save final assistant message (no tool_calls — those were saved per-pass)
         asst_msg = Message(
             id=str(uuid.uuid4()),
             session_id=session_id,
             role="assistant",
             content=assistant_content,
-            tool_calls=tool_calls_json,
+            tool_calls=None,
             tokens_prompt=total_prompt_tokens or None,
             tokens_completion=total_completion_tokens or None,
             elapsed_s=elapsed_s,
