@@ -9,11 +9,10 @@ from app.interfaces.mcp import ToolSchema
 logger = logging.getLogger(__name__)
 
 
-class SSETransport:
-    """HTTP/SSE transport for MCP servers."""
+class HTTPTransport:
+    """HTTP transport for MCP servers."""
 
     def __init__(self, url: str) -> None:
-        # url points to the SSE endpoint, e.g. http://mcp-weather:8001/sse
         self._base_url = url.rstrip("/")
 
     async def list_tools(self) -> list[ToolSchema]:

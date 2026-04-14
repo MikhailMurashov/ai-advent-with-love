@@ -26,12 +26,12 @@ class MCPClient:
             - name: weather
               url: http://mcp-weather:8001/sse
         """
-        from app.infrastructure.mcp_sse import SSETransport
+        from app.infrastructure.mcp_sse import HTTPTransport
 
         for server in config.get("servers", []):
             name = server["name"]
             url = server["url"]
-            transport = SSETransport(url=url)
+            transport = HTTPTransport(url=url)
             self.register(name, transport)
             logger.info("mcp_client: registered server %r at %s", name, url)
 
