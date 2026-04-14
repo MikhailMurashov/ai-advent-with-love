@@ -173,6 +173,12 @@ def init_session_state():
         st.session_state.system_prompt = ""
     if "message_stats" not in st.session_state:
         st.session_state.message_stats = []
+    if "mcp_tools" not in st.session_state:
+        try:
+            from mcp_tools import get_tools
+            st.session_state.mcp_tools = get_tools()
+        except Exception:
+            st.session_state.mcp_tools = None
 
 
 # ---------------------------------------------------------------------------
@@ -820,7 +826,7 @@ def handle_auto_continue(params: dict, model: str) -> None:
 
     with st.chat_message("assistant"):
         with st.spinner("Думаю..."):
-            result = agent.run(auto_message, model=model, **active_params)
+            result = agent.run(auto_message, tools=st.session_state.get("mcp_tools"), model=model, **active_params)
         display_content = strip_transition_marker(result.content) or result.content
         st.markdown(display_content)
         delta_prompt = max(0, (result.prompt_tokens or 0) - (prev_prompt or 0))
@@ -883,7 +889,7 @@ def handle_input(params: dict, model: str):
 
     with st.chat_message("assistant"):
         with st.spinner("Думаю..."):
-            result = agent.run(user_input, model=model, **active_params)
+            result = agent.run(user_input, tools=st.session_state.get("mcp_tools"), model=model, **active_params)
         display_content = strip_transition_marker(result.content) or result.content
         st.markdown(display_content)
         delta_prompt = max(0, (result.prompt_tokens or 0) - (prev_prompt or 0))
