@@ -219,15 +219,19 @@ class Agent:
     # Core run
     # ------------------------------------------------------------------
 
-    def run(self, user_input: str, **llm_params):
+    def run(self, user_input: str, tools: list | None = None, **llm_params):
         self._strategy.system_prompt = self._build_full_system_prompt()
         logger.info(
-            "agent: run strategy=%s history_len=%d input=%r",
+            "agent: run strategy=%s history_len=%d input=%r tools=%s",
             self.strategy_type.value,
             len(self._strategy._history),
             user_input[:80],
+            bool(tools),
         )
-        response = self._strategy.run(user_input, **llm_params)
+        if tools:
+            response = self._run_with_tools(user_input, tools, **llm_params)
+        else:
+            response = self._strategy.run(user_input, **llm_params)
         logger.info(
             "agent: response tokens prompt=%s completion=%s total=%s elapsed=%.2fs",
             response.prompt_tokens,
@@ -236,3 +240,52 @@ class Agent:
             response.elapsed_s,
         )
         return response
+
+    def _run_with_tools(self, user_input: str, tools: list, **llm_params):
+        import json
+
+        import llm_client as lc
+        from llm_client import ChatResponse
+        from mcp_tools import call_tool
+
+        self._strategy._history.append({"role": "user", "content": user_input})
+
+        system = self._strategy.system_prompt
+        messages = [{"role": "system", "content": system}] + list(self._strategy._history)
+
+        total_elapsed = 0.0
+
+        while True:
+            resp = lc.chat(messages, tools=tools, **llm_params)
+            total_elapsed += resp.elapsed_s
+
+            if not resp.tool_calls:
+                self._strategy._history.append({"role": "assistant", "content": resp.content})
+                return ChatResponse(
+                    content=resp.content,
+                    prompt_tokens=resp.prompt_tokens,
+                    completion_tokens=resp.completion_tokens,
+                    total_tokens=resp.total_tokens,
+                    elapsed_s=total_elapsed,
+                )
+
+            assistant_msg = {
+                "role": "assistant",
+                "content": resp.content,
+                "tool_calls": [tc.model_dump() for tc in resp.tool_calls],
+            }
+            messages.append(assistant_msg)
+            self._strategy._history.append(assistant_msg)
+
+            for tc in resp.tool_calls:
+                args = json.loads(tc.function.arguments)
+                logger.info("agent: tool_call name=%s args=%r", tc.function.name, args)
+                result = call_tool(tc.function.name, args)
+                logger.info("agent: tool_result %r", result[:200])
+                tool_msg = {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result,
+                }
+                messages.append(tool_msg)
+                self._strategy._history.append(tool_msg)

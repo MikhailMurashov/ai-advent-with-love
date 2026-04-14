@@ -12,11 +12,13 @@ class ChatResponse:
     completion_tokens: int | None
     total_tokens: int | None
     elapsed_s: float
+    tool_calls: list | None = None
 
 
 def chat(
     messages: list[dict[str, str]],
     model: str = LLM_MODEL,
+    tools: list | None = None,
     temperature: float | None = None,
     top_p: float | None = None,
     top_k: int | None = None,
@@ -80,15 +82,19 @@ def chat(
         frequency_penalty=frequency_penalty,
         stop=stop,
         messages=messages,
+        **({"tools": tools} if tools else {}),
         **({"ssl_verify": False} if is_gigachat else {}),
     )
     elapsed_s = time.time() - t0
 
+    msg = response.choices[0].message  # type: ignore[union-attr]
     u = response.usage  # type: ignore[union-attr]
+    tool_calls = msg.tool_calls if hasattr(msg, "tool_calls") else None
     return ChatResponse(
-        content=response.choices[0].message.content or "",
+        content=msg.content or "",
         prompt_tokens=u.prompt_tokens if u else None,
         completion_tokens=u.completion_tokens if u else None,
         total_tokens=u.total_tokens if u else None,
         elapsed_s=elapsed_s,
+        tool_calls=tool_calls or None,
     )
