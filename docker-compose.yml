@@ -6,6 +6,13 @@ services:
       - "8001:8001"
     restart: unless-stopped
 
+  mcp-time:
+    build:
+      context: ./services/mcp-time
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+
   api:
     build:
       context: ./services/api
@@ -13,6 +20,7 @@ services:
       - "8000:8000"
     depends_on:
       - mcp-weather
+      - mcp-time
     volumes:
       - ./data:/app/data
     environment:
