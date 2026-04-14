@@ -216,3 +216,6 @@ CLAUDE.md
 # Qwen
 .qwen/
 QWEN.md
+
+
+./data/*

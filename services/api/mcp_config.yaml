@@ -1,0 +1,7 @@
+servers:
+  - name: weather
+    url: http://mcp-weather:8001
+    description: "Weather tools via OpenMeteo"
+  - name: time
+    url: http://mcp-time:8002
+    description: "Current date, time and timezone tools"
