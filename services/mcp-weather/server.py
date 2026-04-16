@@ -22,7 +22,7 @@ WMO_CODES = {
 
 
 async def _geocode(city: str) -> tuple[float, float, str]:
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
             GEOCODING_URL,
             params={"name": city, "count": 1, "language": "ru", "format": "json"},
@@ -45,7 +45,7 @@ async def _fetch_weather(lat: float, lon: float, days: int = 1) -> dict:
         "forecast_days": days,
         "timezone": "auto",
     }
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(FORECAST_URL, params=params)
         resp.raise_for_status()
         return resp.json()
@@ -71,7 +71,7 @@ async def get_current_weather(city: str) -> str:
             f"  Влажность: {humidity}%"
         )
     except Exception as e:
-        return f"Ошибка получения погоды: {e}"
+        return f"Ошибка получения погоды: {type(e).__name__}: {e}"
 
 
 async def get_forecast(city: str, days: int = 3) -> str:
@@ -95,12 +95,66 @@ async def get_forecast(city: str, days: int = 3) -> str:
             lines.append(f"  {date}: {desc}, {tmin}…{tmax}°C, осадки {pr} мм")
         return "\n".join(lines)
     except Exception as e:
-        return f"Ошибка получения прогноза: {e}"
+        return f"Ошибка получения прогноза: {type(e).__name__}: {e}"
+
+
+async def get_weather_by_coords(lat: float, lon: float, days: int = 1) -> str:
+    try:
+        days = max(1, min(days, 7))
+        data = await _fetch_weather(lat, lon, days=days)
+        cur = data.get("current", {})
+        temp = cur.get("temperature_2m", "?")
+        wcode = cur.get("weathercode", 0)
+        wind = cur.get("windspeed_10m", "?")
+        humidity = cur.get("relativehumidity_2m", "?")
+        desc = WMO_CODES.get(wcode, "Неизвестно")
+        result = (
+            f"Погода по координатам ({lat}, {lon}):\n"
+            f"  Состояние: {desc}\n"
+            f"  Температура: {temp}°C\n"
+            f"  Ветер: {wind} км/ч\n"
+            f"  Влажность: {humidity}%"
+        )
+        if days > 1:
+            daily = data.get("daily", {})
+            dates = daily.get("time", [])
+            codes = daily.get("weathercode", [])
+            max_temps = daily.get("temperature_2m_max", [])
+            min_temps = daily.get("temperature_2m_min", [])
+            precip = daily.get("precipitation_sum", [])
+            lines = [result, f"\nПрогноз на {days} дн.:"]
+            for i, date in enumerate(dates):
+                d = WMO_CODES.get(codes[i] if i < len(codes) else 0, "?")
+                tmax = max_temps[i] if i < len(max_temps) else "?"
+                tmin = min_temps[i] if i < len(min_temps) else "?"
+                pr = precip[i] if i < len(precip) else "?"
+                lines.append(f"  {date}: {d}, {tmin}…{tmax}°C, осадки {pr} мм")
+            return "\n".join(lines)
+        return result
+    except Exception as e:
+        return f"Ошибка получения погоды: {type(e).__name__}: {e}"
 
 
 # ---- HTTP endpoints ----
 
 TOOLS_LIST = [
+    {
+        "name": "get_weather_by_coords",
+        "description": (
+            "Возвращает погоду и прогноз по географическим координатам. "
+            "ИСПОЛЬЗУЙ ЭТОТ ИНСТРУМЕНТ В ПЕРВУЮ ОЧЕРЕДЬ, если известны координаты (широта/долгота). "
+            "Быстрее и точнее, чем поиск по названию города."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "lat": {"type": "number", "description": "Широта"},
+                "lon": {"type": "number", "description": "Долгота"},
+                "days": {"type": "integer", "description": "Количество дней прогноза (1–7), по умолчанию 1", "default": 1},
+            },
+            "required": ["lat", "lon"],
+        },
+    },
     {
         "name": "get_current_weather",
         "description": "Возвращает текущую погоду в указанном городе.",
@@ -147,6 +201,8 @@ async def call_tool(req: CallRequest) -> dict:
         result = await get_current_weather(**req.arguments)
     elif req.name == "get_forecast":
         result = await get_forecast(**req.arguments)
+    elif req.name == "get_weather_by_coords":
+        result = await get_weather_by_coords(**req.arguments)
     else:
         result = f"Unknown tool: {req.name}"
     return {"content": [{"type": "text", "text": result}]}
