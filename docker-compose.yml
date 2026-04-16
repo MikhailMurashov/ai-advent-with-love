@@ -13,6 +13,16 @@ services:
       - "8002:8002"
     restart: unless-stopped
 
+  mcp-dadata:
+    build:
+      context: ./services/mcp-dadata
+    ports:
+      - "8003:8003"
+    environment:
+      - DADATA_API_KEY=${DADATA_API_KEY:-}
+      - DADATA_SECRET_KEY=${DADATA_SECRET_KEY:-}
+    restart: unless-stopped
+
   api:
     build:
       context: ./services/api
@@ -21,6 +31,7 @@ services:
     depends_on:
       - mcp-weather
       - mcp-time
+      - mcp-dadata
     volumes:
       - ./data:/app/data
     environment:
