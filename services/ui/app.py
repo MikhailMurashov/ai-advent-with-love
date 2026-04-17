@@ -142,7 +142,7 @@ async def on_message(message: cl.Message) -> None:
     if temperature is not None:
         params["temperature"] = float(temperature)
 
-    response_msg = cl.Message(content="")
+    response_msg = cl.Message(content="", author=model)
     response_msg_sent = False
 
     try:

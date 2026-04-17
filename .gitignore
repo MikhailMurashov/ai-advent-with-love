@@ -218,4 +218,6 @@ CLAUDE.md
 QWEN.md
 
 
-./data/*
+data/*.sqlite
+data/*.sqlite-journal
+!data/.gitkeep

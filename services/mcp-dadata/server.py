@@ -16,7 +16,7 @@ DADATA_API_KEY = os.environ.get("DADATA_API_KEY", "")
 DADATA_SECRET_KEY = os.environ.get("DADATA_SECRET_KEY", "")
 
 
-async def suggest_address(query: str, count: int = 5) -> str:
+async def suggest_address(query: str, count: int = 1) -> str:
     if not query:
         return "Ошибка: запрос не может быть пустым"
     if not 1 <= count <= 20:
