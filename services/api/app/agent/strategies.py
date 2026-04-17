@@ -48,7 +48,7 @@ class BaseStrategy(ABC):
 class SlidingWindowSummaryStrategy(BaseStrategy):
     """Sliding window with auto-summarization."""
 
-    CONTEXT_WINDOW = 10
+    CONTEXT_WINDOW = 100
 
     def __init__(
         self, system_prompt: str = "", summarization_enabled: bool = True

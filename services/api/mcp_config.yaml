@@ -5,3 +5,6 @@ servers:
   - name: time
     url: http://mcp-time:8002
     description: "Current date, time and timezone tools"
+  - name: dadata
+    url: http://mcp-dadata:8003
+    description: "Dadata address cleaning and standardization tools"
