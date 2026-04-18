@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu,
+      Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.gray.600') transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: theme('colors.gray.600');
+    border-radius: 2px;
+  }
+}
+
+/* Prose markdown styles override */
+.prose pre {
+  @apply bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto text-xs;
+}
+
+.prose code:not(pre code) {
+  @apply bg-gray-100 text-gray-800 rounded px-1 py-0.5 text-xs font-mono;
+}
+
+.prose a {
+  @apply text-indigo-600 hover:text-indigo-500;
+}
+
+.prose table {
+  @apply w-full border-collapse;
+}
+
+.prose th,
+.prose td {
+  @apply border border-gray-200 px-3 py-1.5 text-sm;
+}
+
+.prose th {
+  @apply bg-gray-50 font-semibold;
+}
