@@ -7,9 +7,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.db.database import create_tables
+from app.db.database import async_session_factory, create_tables
+from app.db.repositories import SQLiteMCPServerRepository
 from app.dependencies import get_mcp_client
-from app.routers import chat, sessions, users
+from app.routers import chat, mcp_servers, sessions, users
 
 logging.basicConfig(level=logging.INFO)
 
@@ -26,21 +27,19 @@ app.add_middleware(
 app.include_router(users.router)
 app.include_router(sessions.router)
 app.include_router(chat.router)
+app.include_router(mcp_servers.router)
 
 
 @app.on_event("startup")
 async def startup() -> None:
     await create_tables()
 
+    async with async_session_factory() as db:
+        repo = SQLiteMCPServerRepository(db)
+        enabled = await repo.list_enabled()
+
     mcp_client = get_mcp_client()
-    try:
-        with open(settings.mcp_config_path) as f:
-            config = yaml.safe_load(f)
-        await mcp_client.load_servers(config or {})
-    except FileNotFoundError:
-        logging.warning("main: mcp_config.yaml not found, MCP tools unavailable")
-    except Exception as e:
-        logging.warning("main: failed to load MCP config: %s", e)
+    await mcp_client.load_servers_from_db(enabled)
 
 
 @app.get("/health")

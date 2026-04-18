@@ -18,25 +18,6 @@ class MCPClient:
     def register(self, name: str, transport: IMCPTransport) -> None:
         self._transports[name] = transport
 
-    async def load_servers(self, config: dict) -> None:
-        """
-        Load all servers from parsed mcp_config.yaml dict.
-        Expected format:
-          servers:
-            - name: weather
-              url: http://mcp-weather:8001/sse
-        """
-        from app.infrastructure.mcp_sse import HTTPTransport
-
-        for server in config.get("servers", []):
-            name = server["name"]
-            url = server["url"]
-            transport = HTTPTransport(url=url)
-            self.register(name, transport)
-            logger.info("mcp_client: registered server %r at %s", name, url)
-
-        await self._refresh_tools()
-
     async def _refresh_tools(self) -> None:
         self._tool_index = {}
         schemas: list[ToolSchema] = []
@@ -74,3 +55,24 @@ class MCPClient:
 
     def get_tools_schema(self) -> list[dict]:
         return list(self._tools_schema)
+
+    async def load_servers_from_db(self, servers: list) -> None:
+        """Загружает серверы из списка MCPServerInfo (вызывается при старте)."""
+        from app.infrastructure.mcp_sse import HTTPTransport
+
+        for s in servers:
+            self.register(s.name, HTTPTransport(url=s.url))
+            logger.info("mcp_client: registered server %r at %s", s.name, s.url)
+        await self._refresh_tools()
+
+    async def register_server(self, name: str, url: str) -> None:
+        """Добавляет сервер и обновляет tool index."""
+        from app.infrastructure.mcp_sse import HTTPTransport
+
+        self.register(name, HTTPTransport(url=url))
+        await self._refresh_tools()
+
+    async def unregister_server(self, name: str) -> None:
+        """Удаляет сервер и обновляет tool index."""
+        self._transports.pop(name, None)
+        await self._refresh_tools()

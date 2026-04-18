@@ -43,15 +43,24 @@ services:
       - MCP_CONFIG_PATH=/app/mcp_config.yaml
     restart: unless-stopped
 
-  ui:
+#  ui:
+#    build:
+#      context: ./services/ui
+#    ports:
+#      - "8501:8501"
+#    depends_on:
+#      - api
+#    environment:
+#      - API_URL=http://api:8000
+#      - DEFAULT_MODEL=${LLM_MODEL:-gigachat/GigaChat-2}
+#      - CHAINLIT_AUTH_SECRET=${CHAINLIT_AUTH_SECRET:-EahjBaVnGvFWM_iLp64PwGp4c3VYtfMjVvfriJiSDEI}
+#    restart: unless-stopped
+
+  ui-react:
     build:
-      context: ./services/ui
+      context: ./services/ui-react
     ports:
-      - "8501:8501"
+      - "3000:3000"
     depends_on:
       - api
-    environment:
-      - API_URL=http://api:8000
-      - DEFAULT_MODEL=${LLM_MODEL:-gigachat/GigaChat-2}
-      - CHAINLIT_AUTH_SECRET=${CHAINLIT_AUTH_SECRET:-EahjBaVnGvFWM_iLp64PwGp4c3VYtfMjVvfriJiSDEI}
     restart: unless-stopped

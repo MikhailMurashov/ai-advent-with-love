@@ -221,3 +221,4 @@ QWEN.md
 data/*.sqlite
 data/*.sqlite-journal
 !data/.gitkeep
+services/ui-react/node_modules*
