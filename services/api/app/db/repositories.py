@@ -10,13 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import (
     InvariantsModel,
     LongTermMemoryModel,
+    MCPServerModel,
     MessageModel,
     PersonalizationModel,
     SessionModel,
     UserModel,
     WorkingMemoryModel,
 )
-from app.interfaces.repositories import Message, SessionInfo, User
+from app.interfaces.repositories import MCPServerInfo, Message, SessionInfo, User
 
 
 def _now() -> str:
@@ -248,3 +249,73 @@ class SQLiteMemoryRepository:
             row.rules_json = json.dumps(rules, ensure_ascii=False)
             row.updated_at = _now()
         await self._session.commit()
+
+
+class SQLiteMCPServerRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    def _to_info(self, row: MCPServerModel) -> MCPServerInfo:
+        return MCPServerInfo(
+            id=row.id,
+            name=row.name,
+            url=row.url,
+            description=row.description,
+            enabled=bool(row.enabled),
+            created_at=row.created_at,
+        )
+
+    async def list_all(self) -> list[MCPServerInfo]:
+        result = await self._session.execute(select(MCPServerModel))
+        return [self._to_info(r) for r in result.scalars()]
+
+    async def list_enabled(self) -> list[MCPServerInfo]:
+        result = await self._session.execute(
+            select(MCPServerModel).where(MCPServerModel.enabled == 1)
+        )
+        return [self._to_info(r) for r in result.scalars()]
+
+    async def get(self, server_id: str) -> MCPServerInfo | None:
+        result = await self._session.execute(
+            select(MCPServerModel).where(MCPServerModel.id == server_id)
+        )
+        row = result.scalar_one_or_none()
+        return self._to_info(row) if row else None
+
+    async def get_by_name(self, name: str) -> MCPServerInfo | None:
+        result = await self._session.execute(
+            select(MCPServerModel).where(MCPServerModel.name == name)
+        )
+        row = result.scalar_one_or_none()
+        return self._to_info(row) if row else None
+
+    async def create(
+        self, name: str, url: str, description: str = "", enabled: bool = True
+    ) -> MCPServerInfo:
+        row = MCPServerModel(
+            id=str(uuid.uuid4()),
+            name=name,
+            url=url,
+            description=description,
+            enabled=1 if enabled else 0,
+            created_at=_now(),
+        )
+        self._session.add(row)
+        await self._session.commit()
+        await self._session.refresh(row)
+        return self._to_info(row)
+
+    async def delete(self, server_id: str) -> None:
+        await self._session.execute(
+            delete(MCPServerModel).where(MCPServerModel.id == server_id)
+        )
+        await self._session.commit()
+
+    async def set_enabled(self, server_id: str, enabled: bool) -> MCPServerInfo | None:
+        await self._session.execute(
+            update(MCPServerModel)
+            .where(MCPServerModel.id == server_id)
+            .values(enabled=1 if enabled else 0)
+        )
+        await self._session.commit()
+        return await self.get(server_id)

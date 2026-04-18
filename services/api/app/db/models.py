@@ -120,3 +120,14 @@ class InvariantsModel(Base):
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 
     user: Mapped[UserModel] = relationship(back_populates="invariants")
+
+
+class MCPServerModel(Base):
+    __tablename__ = "mcp_servers"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    enabled: Mapped[int] = mapped_column(Integer, default=1, nullable=False)  # 0/1
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
