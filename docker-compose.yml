@@ -41,6 +41,21 @@ services:
       retries: 5
       start_period: 5s
 
+  mcp-scheduler:
+    build:
+      context: ./services/mcp-reminder
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8004/health')\"" ]
+      interval: 1m
+      timeout: 1s
+      retries: 5
+      start_period: 5s
+
   api:
     build:
       context: ./services/api
@@ -52,6 +67,8 @@ services:
       mcp-time:
         condition: service_healthy
       mcp-dadata:
+        condition: service_healthy
+      mcp-scheduler:
         condition: service_healthy
     volumes:
       - ./data:/app/data
