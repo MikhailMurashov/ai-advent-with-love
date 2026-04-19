@@ -21,6 +21,7 @@ class DateTimeInfo:
     weekday: str
     timezone: str
     utc_offset: str
+    iso_format: str
 
 
 def _format_utc_offset(dt: datetime) -> str:
@@ -52,6 +53,7 @@ async def get_current_timezone_datetime(
         weekday=now.strftime("%A"),
         timezone=timezone,
         utc_offset=_format_utc_offset(now),
+        iso_format=now.isoformat(),
     )
 
 
@@ -67,6 +69,7 @@ def get_server_datetime() -> DateTimeInfo:
         weekday=now.strftime("%A"),
         timezone=now.tzname() or "Unknown",
         utc_offset=_format_utc_offset(now),
+        iso_format=now.isoformat(),
     )
 
 
@@ -105,6 +108,7 @@ async def get_time_by_coords(
         weekday=data.get("dayOfWeek", "?"),
         timezone=iana_tz,
         utc_offset=utc_offset_str,
+        iso_format='?',
     )
 
 

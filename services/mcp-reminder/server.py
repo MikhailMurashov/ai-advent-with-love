@@ -51,7 +51,11 @@ async def available_channels() -> dict:
 )
 async def create_one_shoot_notification(
     text: Annotated[str, Field(description="Текст уведомления")],
-    scheduled_at: Annotated[str, Field(description="ISO datetime для уведомления")],
+    scheduled_at: Annotated[str, Field(
+        description=
+            "ISO datetime для уведомления, например '2026-04-19T10:30:00Z'. "
+            "Не передавай относительные строки вроде 'через 1 минуту'."
+    )],
     ctx: Context,
     channel: Annotated[str, Field(description="Имя канала")] = "webhook",
 ):
