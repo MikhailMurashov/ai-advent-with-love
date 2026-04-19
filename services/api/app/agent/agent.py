@@ -193,14 +193,21 @@ class Agent:
             llm_messages.extend(self._strategy.get_context())
 
         tools = self._mcp_client.get_tools_schema()
+        logger.info("tools available (%d):", len(tools))
+        for _t in tools:
+            _fn = _t["function"]
+            _params = list((_fn.get("parameters") or {}).get("properties", {}).keys())
+            logger.info("  %s — %s  [params: %s]", _fn["name"], _fn["description"], _params)
 
         # Tool calling loop
         t0 = time.time()
         total_prompt_tokens = 0
         total_completion_tokens = 0
         assistant_content = ""
+        iteration = 0
 
         while True:
+            iteration += 1
             pending_tool_calls: list[dict] = []
             current_content = ""
             buffered_token_events: list[ChatEvent] = []
@@ -229,7 +236,18 @@ class Agent:
                     yield event
                     return
 
+            if pending_tool_calls:
+                for tc in pending_tool_calls:
+                    logger.info(
+                        "agent[iter=%d]: tool_call %r args=%s",
+                        iteration, tc["name"], json.dumps(tc["args"], ensure_ascii=False),
+                    )
+
             if not pending_tool_calls:
+                logger.info(
+                    "agent[iter=%d]: final response len=%d chars",
+                    iteration, len(current_content),
+                )
                 # No tool calls: stream the buffered tokens and finish
                 for te in buffered_token_events:
                     yield te

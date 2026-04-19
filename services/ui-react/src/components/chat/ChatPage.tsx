@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Settings, Wrench } from 'lucide-react'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useChatStore } from '@/store/useChatStore'
@@ -117,6 +117,7 @@ function parseDbMessages(dbMessages: DbMessage[]): DisplayMessage[] {
 export function ChatPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const sessions = useAppStore((s) => s.sessions)
   const messages = useChatStore((s) => s.messages)
   const setMessages = useChatStore((s) => s.setMessages)
@@ -125,13 +126,37 @@ export function ChatPage() {
   const error = useChatStore((s) => s.error)
   const setError = useChatStore((s) => s.setError)
   const reset = useChatStore((s) => s.reset)
+  const startStreaming = useChatStore((s) => s.startStreaming)
 
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showMCP, setShowMCP] = useState(false)
 
   const settings = useSessionSettingsStore()
-  const { sendMessage } = useWebSocket(sessionId ?? '')
+
+  // First message passed via navigation state (from HomePage lazy session creation)
+  const firstMessageRef = useRef<string | null>(
+    (location.state as { firstMessage?: string } | null)?.firstMessage ?? null,
+  )
+  // Ref to always call the latest handleSend from onOpen callback
+  const handleSendRef = useRef<((payload: WsSendPayload) => void) | null>(null)
+
+  // Clear location state immediately to prevent re-send on page refresh
+  useEffect(() => {
+    if (firstMessageRef.current) {
+      window.history.replaceState({}, '')
+    }
+  }, [])
+
+  const { sendMessage } = useWebSocket(sessionId ?? '', {
+    onOpen: () => {
+      const msg = firstMessageRef.current
+      if (msg) {
+        firstMessageRef.current = null
+        handleSendRef.current?.({ content: msg })
+      }
+    },
+  })
 
   // Validate session exists
   useEffect(() => {
@@ -151,7 +176,12 @@ export function ChatPage() {
     getSessionMessages(sessionId)
       .then((dbMessages) => {
         const display = parseDbMessages(dbMessages)
-        setMessages(display)
+        // Only overwrite store if history is non-empty.
+        // If empty, reset() already cleared it — don't wipe a user message
+        // that may have been added by the first-message auto-send via onOpen.
+        if (display.length > 0) {
+          setMessages(display)
+        }
       })
       .catch((err: unknown) => {
         setError(`Ошибка загрузки истории: ${String(err)}`)
@@ -166,8 +196,10 @@ export function ChatPage() {
 
   const handleSend = (payload: WsSendPayload) => {
     addUserMessage(payload.content)
+    startStreaming()
     sendMessage({ ...payload, params: { ...payload.params, temperature: settings.temperature } })
   }
+  handleSendRef.current = handleSend
 
   const toolbar = (
     <div className="flex-shrink-0 border-t border-gray-100 bg-white px-4 pt-1.5 pb-4 flex justify-center">

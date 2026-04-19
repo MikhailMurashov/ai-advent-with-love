@@ -70,3 +70,16 @@
 .prose th {
   @apply bg-gray-50 font-semibold;
 }
+
+@keyframes dot-blink {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+
+.thinking-dot {
+  animation: dot-blink 1.4s infinite;
+  display: inline-block;
+}
+.dot-1 { animation-delay: 0s; }
+.dot-2 { animation-delay: 0.3s; }
+.dot-3 { animation-delay: 0.6s; }

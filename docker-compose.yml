@@ -5,6 +5,12 @@ services:
     ports:
       - "8001:8001"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 1m
+      timeout: 1s
+      retries: 5
+      start_period: 5s
 
   mcp-time:
     build:
@@ -12,6 +18,12 @@ services:
     ports:
       - "8002:8002"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health')\""]
+      interval: 1m
+      timeout: 1s
+      retries: 5
+      start_period: 5s
 
   mcp-dadata:
     build:
@@ -22,6 +34,12 @@ services:
       - DADATA_API_KEY=${DADATA_API_KEY:-}
       - DADATA_SECRET_KEY=${DADATA_SECRET_KEY:-}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8003/health')\""]
+      interval: 1m
+      timeout: 1s
+      retries: 5
+      start_period: 5s
 
   api:
     build:
@@ -29,9 +47,12 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - mcp-weather
-      - mcp-time
-      - mcp-dadata
+      mcp-weather:
+        condition: service_healthy
+      mcp-time:
+        condition: service_healthy
+      mcp-dadata:
+        condition: service_healthy
     volumes:
       - ./data:/app/data
     environment:
@@ -42,19 +63,12 @@ services:
       - SQLITE_PATH=/app/data/db.sqlite
       - MCP_CONFIG_PATH=/app/mcp_config.yaml
     restart: unless-stopped
-
-#  ui:
-#    build:
-#      context: ./services/ui
-#    ports:
-#      - "8501:8501"
-#    depends_on:
-#      - api
-#    environment:
-#      - API_URL=http://api:8000
-#      - DEFAULT_MODEL=${LLM_MODEL:-gigachat/GigaChat-2}
-#      - CHAINLIT_AUTH_SECRET=${CHAINLIT_AUTH_SECRET:-EahjBaVnGvFWM_iLp64PwGp4c3VYtfMjVvfriJiSDEI}
-#    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 1m
+      timeout: 1s
+      retries: 5
+      start_period: 15s
 
   ui-react:
     build:
@@ -62,5 +76,6 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped

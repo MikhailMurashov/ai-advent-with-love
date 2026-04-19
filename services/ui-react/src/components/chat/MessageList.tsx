@@ -19,7 +19,7 @@ export function MessageList() {
         {messages.map((msg, idx) => (
           <MessageBubble key={idx} message={msg} />
         ))}
-        {isStreaming && streamingContent && (
+        {isStreaming && (
           <StreamingBubble content={streamingContent} />
         )}
         <div ref={bottomRef} />

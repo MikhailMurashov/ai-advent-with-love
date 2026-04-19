@@ -58,18 +58,18 @@ class MCPClient:
 
     async def load_servers_from_db(self, servers: list) -> None:
         """Загружает серверы из списка MCPServerInfo (вызывается при старте)."""
-        from app.infrastructure.mcp_sse import HTTPTransport
+        from app.infrastructure.mcp_sse import FastMCPTransport
 
         for s in servers:
-            self.register(s.name, HTTPTransport(url=s.url))
+            self.register(s.name, FastMCPTransport(url=s.url))
             logger.info("mcp_client: registered server %r at %s", s.name, s.url)
         await self._refresh_tools()
 
     async def register_server(self, name: str, url: str) -> None:
         """Добавляет сервер и обновляет tool index."""
-        from app.infrastructure.mcp_sse import HTTPTransport
+        from app.infrastructure.mcp_sse import FastMCPTransport
 
-        self.register(name, HTTPTransport(url=url))
+        self.register(name, FastMCPTransport(url=url))
         await self._refresh_tools()
 
     async def unregister_server(self, name: str) -> None:

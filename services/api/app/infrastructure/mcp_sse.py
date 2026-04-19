@@ -2,45 +2,39 @@ from __future__ import annotations
 
 import logging
 
-import httpx
+from fastmcp import Client
 
 from app.interfaces.mcp import ToolSchema
 
 logger = logging.getLogger(__name__)
 
 
-class HTTPTransport:
-    """HTTP transport for MCP servers."""
+class FastMCPTransport:
+    """FastMCP HTTP transport (MCP Streamable HTTP at /mcp/)."""
 
     def __init__(self, url: str) -> None:
-        self._base_url = url.rstrip("/")
+        base = url.rstrip("/")
+        self._mcp_url = base if base.endswith("/mcp") else f"{base}/mcp"
 
     async def list_tools(self) -> list[ToolSchema]:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{self._base_url}/tools")
-            resp.raise_for_status()
-            data = resp.json()
-        tools = []
-        for item in data.get("tools", data if isinstance(data, list) else []):
-            tools.append(
-                ToolSchema(
-                    name=item["name"],
-                    description=item.get("description", ""),
-                    parameters=item.get("inputSchema", item.get("parameters", {})),
-                )
+        logger.info(f"Fetching tools from {self._mcp_url}")
+        async with Client(self._mcp_url) as client:
+            tools = await client.list_tools()
+        return [
+            ToolSchema(
+                name=t.name,
+                description=t.description or "",
+                parameters=t.inputSchema or {},
             )
-        return tools
+            for t in tools
+        ]
 
     async def call_tool(self, name: str, args: dict) -> str:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"{self._base_url}/call",
-                json={"name": name, "arguments": args},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        # MCP response: {"content": [{"type": "text", "text": "..."}]}
-        content = data.get("content", [])
-        if content and isinstance(content, list):
-            return content[0].get("text", str(data))
-        return str(data)
+        async with Client(self._mcp_url) as client:
+            result = await client.call_tool_mcp(name, args)
+        parts = [
+            item.text
+            for item in (result.content or [])
+            if hasattr(item, "text") and item.text
+        ]
+        return "\n".join(parts) if parts else str(result)

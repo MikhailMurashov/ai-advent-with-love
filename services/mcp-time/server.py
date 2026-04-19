@@ -1,172 +1,113 @@
 """MCP Time server with HTTP transport (tools/call endpoints)."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
-from fastapi import FastAPI
-from pydantic import BaseModel
+from fastmcp import FastMCP, Context
+from pydantic import Field
+from starlette.responses import JSONResponse
 
-app = FastAPI(title="MCP Time Server")
-
-
-# ---- Tool implementations ----
+mcp = FastMCP(name="MCP Time Server")
 
 
-def get_current_datetime(timezone: str = "UTC") -> str:
+@dataclass
+class DateTimeInfo:
+    date: str
+    time: str
+    weekday: str
+    timezone: str
+    utc_offset: str
+
+
+def _format_utc_offset(dt: datetime) -> str:
+    utc_offset = dt.strftime("%z")
+    if len(utc_offset) == 5:
+        return utc_offset[:3] + ":" + utc_offset[3:]
+    return utc_offset
+
+
+@mcp.tool(
+    description="Текущее время по IANA-часовому поясу",
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+async def get_current_timezone_datetime(
+    ctx: Context,
+    timezone: Annotated[str, Field(description='IANA timezone, например "Europe/Moscow"')] = "UTC",
+) -> DateTimeInfo:
+    await ctx.info(f"get_current_timezone_datetime for {timezone}")
+
     try:
         tz = ZoneInfo(timezone)
     except ZoneInfoNotFoundError:
-        return f"Часовой пояс '{timezone}' не найден. Используйте IANA-имена, например: Europe/Moscow, America/New_York, Asia/Tokyo"
+        raise ValueError(f"Часовой пояс '{timezone}' не найден. Используйте IANA-имена, например: Europe/Moscow, Asia/Tokyo")
+
     now = datetime.now(tz)
-    utc_offset = now.strftime("%z")
-    if len(utc_offset) == 5:
-        utc_offset = utc_offset[:3] + ":" + utc_offset[3:]
-    return (
-        f"Текущая дата и время ({timezone}):\n"
-        f"  Дата: {now.strftime('%Y-%m-%d')}\n"
-        f"  Время: {now.strftime('%H:%M:%S')}\n"
-        f"  День недели: {now.strftime('%A')}\n"
-        f"  Часовой пояс: {now.tzname()}\n"
-        f"  UTC смещение: {utc_offset}\n"
-        f"  ISO 8601: {now.isoformat()}"
+    return DateTimeInfo(
+        date=now.strftime("%Y-%m-%d"),
+        time=now.strftime("%H:%M:%S"),
+        weekday=now.strftime("%A"),
+        timezone=timezone,
+        utc_offset=_format_utc_offset(now),
     )
 
 
-def get_local_datetime() -> str:
+@mcp.tool(
+    description="Текущее время на сервере",
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+def get_server_datetime() -> DateTimeInfo:
     now = datetime.now().astimezone()
-    tz_name = now.tzname() or "Unknown"
-    utc_offset = now.strftime("%z")
-    if len(utc_offset) == 5:
-        utc_offset = utc_offset[:3] + ":" + utc_offset[3:]
-    return (
-        f"Локальное время сервера:\n"
-        f"  Дата: {now.strftime('%Y-%m-%d')}\n"
-        f"  Время: {now.strftime('%H:%M:%S')}\n"
-        f"  День недели: {now.strftime('%A')}\n"
-        f"  Часовой пояс: {tz_name}\n"
-        f"  UTC смещение: {utc_offset}\n"
-        f"  ISO 8601: {now.isoformat()}"
+    return DateTimeInfo(
+        date=now.strftime("%Y-%m-%d"),
+        time=now.strftime("%H:%M:%S"),
+        weekday=now.strftime("%A"),
+        timezone=now.tzname() or "Unknown",
+        utc_offset=_format_utc_offset(now),
     )
 
 
-async def get_city_time(city: str) -> str:
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                "https://geocoding-api.open-meteo.com/v1/search",
-                params={"name": city, "count": 1, "language": "en", "format": "json"},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as e:
-        return f"Ошибка геокодирования: {e}"
+@mcp.tool(
+    description="Текущее время по координатам (широта, долгота)",
+    annotations={"readOnlyHint": True, "openWorldHint": True},
+)
+async def get_time_by_coords(
+    lat: Annotated[float, Field(description="Широта", ge=-90, le=90)],
+    lon: Annotated[float, Field(description="Долгота", ge=-180, le=180)],
+    ctx: Context,
+) -> DateTimeInfo:
+    await ctx.info(f"get_time_by_coords for {lat} {lon}")
 
-    results = data.get("results")
-    if not results:
-        return f"Город '{city}' не найден."
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(
+            "https://timeapi.io/api/time/current/coordinate",
+            params={"latitude": lat, "longitude": lon},
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
-    location = results[0]
-    iana_tz = location.get("timezone")
-    if not iana_tz:
-        return f"Для города '{city}' не удалось определить часовой пояс."
+    iana_tz = data.get("timeZone", "Unknown")
+    utc_offset_str = "?"
+    if iana_tz and iana_tz != "Unknown":
+        try:
+            tz = ZoneInfo(iana_tz)
+            now = datetime.now(tz)
+            utc_offset_str = _format_utc_offset(now)
+        except ZoneInfoNotFoundError:
+            pass
 
-    city_name = location.get("name", city)
-    country = location.get("country", "")
-
-    try:
-        tz = ZoneInfo(iana_tz)
-    except ZoneInfoNotFoundError:
-        return f"Неизвестный часовой пояс: {iana_tz}"
-
-    now = datetime.now(tz)
-    utc_offset = now.strftime("%z")
-    if len(utc_offset) == 5:
-        utc_offset = utc_offset[:3] + ":" + utc_offset[3:]
-
-    return (
-        f"Время в городе {city_name}, {country} ({iana_tz}):\n"
-        f"  Дата: {now.strftime('%Y-%m-%d')}\n"
-        f"  Время: {now.strftime('%H:%M:%S')}\n"
-        f"  День недели: {now.strftime('%A')}\n"
-        f"  UTC смещение: {utc_offset}\n"
-        f"  ISO 8601: {now.isoformat()}"
+    return DateTimeInfo(
+        date=data.get("date", "?"),
+        time=data.get("time", "?"),
+        weekday=data.get("dayOfWeek", "?"),
+        timezone=iana_tz,
+        utc_offset=utc_offset_str,
     )
 
 
-# ---- HTTP endpoints ----
-
-TOOLS_LIST = [
-    {
-        "name": "get_current_datetime",
-        "description": "Возвращает реальную текущую дату и время в указанном часовом поясе (IANA-имя или UTC по умолчанию).",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "timezone": {
-                    "type": "string",
-                    "description": "IANA-имя часового пояса (например, Europe/Moscow, America/New_York) или смещение +HH:MM. По умолчанию UTC.",
-                },
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "get_local_datetime",
-        "description": "Возвращает локальное время сервера (системный часовой пояс контейнера).",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
-    },
-    {
-        "name": "get_city_time",
-        "description": "Возвращает реальное текущее время в указанном городе. Геокодирует город через Open-Meteo и определяет его часовой пояс.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "city": {
-                    "type": "string",
-                    "description": "Название города, например Tokyo, London, Москва",
-                },
-            },
-            "required": ["city"],
-        },
-    },
-]
-
-
-@app.get("/tools")
-async def list_tools() -> dict:
-    return {"tools": TOOLS_LIST}
-
-
-class CallRequest(BaseModel):
-    name: str
-    arguments: dict = {}
-
-
-@app.post("/call")
-async def call_tool(req: CallRequest) -> dict:
-    if req.name == "get_current_datetime":
-        result = get_current_datetime(**req.arguments)
-    elif req.name == "get_local_datetime":
-        result = get_local_datetime()
-    elif req.name == "get_city_time":
-        result = await get_city_time(**req.arguments)
-    else:
-        result = f"Unknown tool: {req.name}"
-    return {"content": [{"type": "text", "text": result}]}
-
-
-@app.get("/health")
-async def health() -> dict:
-    return {"status": "ok"}
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request):
+    return JSONResponse({"status": "ok", "service": "mcp-server"})
