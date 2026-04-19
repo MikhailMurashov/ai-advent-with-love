@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { buildWsUrl } from '@/api/client'
 import { useChatStore } from '@/store/useChatStore'
+import { useNotificationStore } from '@/store/useNotificationStore'
 import type { WsServerEvent, WsSendPayload } from '@/api/types'
 
 const USERNAME = 'guest'
@@ -24,6 +25,7 @@ export function useWebSocket(
   const appendToolStep = useChatStore((s) => s.appendToolStep)
   const finalizeStream = useChatStore((s) => s.finalizeStream)
   const setError = useChatStore((s) => s.setError)
+  const addNotification = useNotificationStore((s) => s.addNotification)
 
   sessionIdRef.current = sessionId
 
@@ -65,6 +67,9 @@ export function useWebSocket(
         case 'error':
           setError(parsed.message)
           break
+        case 'notification':
+          addNotification(parsed.content)
+          break
       }
     }
 
@@ -85,7 +90,7 @@ export function useWebSocket(
         if (shouldReconnectRef.current) connect()
       }, delay)
     }
-  }, [appendToken, appendToolStep, finalizeStream, setError])
+  }, [appendToken, appendToolStep, finalizeStream, setError, addNotification])
 
   useEffect(() => {
     shouldReconnectRef.current = true

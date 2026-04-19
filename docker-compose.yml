@@ -41,6 +41,21 @@ services:
       retries: 5
       start_period: 5s
 
+  mcp-reminder:
+    build:
+      context: ./services/mcp-reminder
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8004/health')\""]
+      interval: 1m
+      timeout: 1s
+      retries: 5
+      start_period: 5s
+
   api:
     build:
       context: ./services/api
@@ -53,6 +68,8 @@ services:
         condition: service_healthy
       mcp-dadata:
         condition: service_healthy
+      mcp-reminder:
+        condition: service_healthy
     volumes:
       - ./data:/app/data
     environment:
@@ -61,7 +78,6 @@ services:
       - GIGACHAT_CREDENTIALS=${GIGACHAT_CREDENTIALS:-}
       - GIGACHAT_SCOPE=${GIGACHAT_SCOPE:-GIGACHAT_API_PERSONAL}
       - SQLITE_PATH=/app/data/db.sqlite
-      - MCP_CONFIG_PATH=/app/mcp_config.yaml
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]

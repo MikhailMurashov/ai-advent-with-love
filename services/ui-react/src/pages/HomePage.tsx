@@ -18,7 +18,7 @@ export function HomePage() {
   const [showMCP, setShowMCP] = useState(false)
 
   const handleSend = async (payload: WsSendPayload) => {
-    const title = payload.content.slice(0, 20)
+    const title = payload.content.split(' ').slice(0, 3).join(' ')
     const session = await createSession({
       title,
       model_key: settings.model,

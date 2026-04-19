@@ -14,6 +14,7 @@ from app.db.repositories import (
     SQLiteSessionRepository,
     SQLiteUserRepository,
 )
+from app.connection_manager import manager
 from app.dependencies import get_mcp_client
 from app.infrastructure.llm import LiteLLMClient
 
@@ -27,6 +28,7 @@ async def websocket_chat(
     session_id: str,
 ) -> None:
     await websocket.accept()
+    manager.register(websocket)
     username: str = websocket.query_params.get("username", "")
 
     try:
@@ -120,3 +122,5 @@ async def websocket_chat(
             )
         except Exception:
             pass
+    finally:
+        manager.unregister(websocket)

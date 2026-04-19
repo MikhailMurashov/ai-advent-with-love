@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -21,6 +21,7 @@ class DateTimeInfo:
     weekday: str
     timezone: str
     utc_offset: str
+    iso_format: str
 
 
 def _format_utc_offset(dt: datetime) -> str:
@@ -52,22 +53,27 @@ async def get_current_timezone_datetime(
         weekday=now.strftime("%A"),
         timezone=timezone,
         utc_offset=_format_utc_offset(now),
+        iso_format=now.isoformat(),
     )
 
 
 @mcp.tool(
-    description="Текущее время на сервере",
+    description="Текущее время на сервере в ISO формате",
     annotations={"readOnlyHint": True, "openWorldHint": False},
 )
-def get_server_datetime() -> DateTimeInfo:
+def get_server_datetime() -> str:
     now = datetime.now().astimezone()
-    return DateTimeInfo(
-        date=now.strftime("%Y-%m-%d"),
-        time=now.strftime("%H:%M:%S"),
-        weekday=now.strftime("%A"),
-        timezone=now.tzname() or "Unknown",
-        utc_offset=_format_utc_offset(now),
-    )
+    return now.isoformat()
+
+
+@mcp.tool(
+    description="Прибавляет к текущему времени секунды и возвращает в формате ISO",
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+def add_sec_to_now(add_sec: int) -> str:
+    now = datetime.now().astimezone()
+    result = now + timedelta(seconds=add_sec)
+    return result.isoformat()
 
 
 @mcp.tool(
@@ -105,6 +111,7 @@ async def get_time_by_coords(
         weekday=data.get("dayOfWeek", "?"),
         timezone=iana_tz,
         utc_offset=utc_offset_str,
+        iso_format='?',
     )
 
 

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.database import async_session_factory, create_tables
 from app.db.repositories import SQLiteMCPServerRepository
 from app.dependencies import get_mcp_client
-from app.routers import chat, mcp_servers, sessions, users
+from app.routers import chat, mcp_servers, notifications, sessions, users
 
 logging.basicConfig(level=logging.INFO)
 
@@ -26,6 +26,7 @@ app.include_router(users.router)
 app.include_router(sessions.router)
 app.include_router(chat.router)
 app.include_router(mcp_servers.router)
+app.include_router(notifications.router)
 
 
 @app.on_event("startup")
