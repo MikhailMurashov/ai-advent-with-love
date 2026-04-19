@@ -6,6 +6,21 @@ interface Props {
 }
 
 export function StreamingBubble({ content }: Props) {
+  if (!content) {
+    return (
+      <div className="flex justify-start">
+        <div className="max-w-[80%] rounded-2xl px-4 py-3 bg-white border border-gray-200 shadow-sm">
+          <span className="text-gray-500 text-sm flex items-center gap-0">
+            Думает
+            <span className="thinking-dot dot-1">.</span>
+            <span className="thinking-dot dot-2">.</span>
+            <span className="thinking-dot dot-3">.</span>
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex justify-start">
       <div className="max-w-[80%] rounded-2xl px-4 py-3 bg-white border border-gray-200 shadow-sm">

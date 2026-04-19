@@ -18,7 +18,7 @@ export const useSessionSettingsStore = create<SessionSettings>()(
       model: 'gigachat/GigaChat-2',
       strategy: 'sliding_window_summary',
       systemPrompt: '',
-      temperature: 0.7,
+      temperature: 0.5,
       setModel: (v) => set({ model: v }),
       setStrategy: (v) => set({ strategy: v }),
       setSystemPrompt: (v) => set({ systemPrompt: v }),

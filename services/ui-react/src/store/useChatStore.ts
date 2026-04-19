@@ -15,6 +15,7 @@ interface ChatState {
   error: string | null
 
   setMessages: (messages: DisplayMessage[]) => void
+  startStreaming: () => void
   appendToken: (token: string) => void
   appendToolStep: (step: ToolStepParams) => void
   finalizeStream: (stats: TokenStats) => void
@@ -30,6 +31,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
 
   setMessages: (messages) => set({ messages }),
+
+  startStreaming: () => set({ isStreaming: true, streamingContent: '' }),
 
   appendToken: (token) => {
     set((state) => ({
@@ -51,7 +54,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   finalizeStream: (stats) => {
     const { streamingContent } = get()
-    if (!streamingContent) return
+    if (!streamingContent) {
+      set({ isStreaming: false, streamingContent: '' })
+      return
+    }
     const assistantMsg: DisplayMessage = {
       kind: 'message',
       role: 'assistant',

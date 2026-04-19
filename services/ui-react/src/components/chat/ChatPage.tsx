@@ -125,6 +125,7 @@ export function ChatPage() {
   const error = useChatStore((s) => s.error)
   const setError = useChatStore((s) => s.setError)
   const reset = useChatStore((s) => s.reset)
+  const startStreaming = useChatStore((s) => s.startStreaming)
 
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -166,6 +167,7 @@ export function ChatPage() {
 
   const handleSend = (payload: WsSendPayload) => {
     addUserMessage(payload.content)
+    startStreaming()
     sendMessage({ ...payload, params: { ...payload.params, temperature: settings.temperature } })
   }
 
