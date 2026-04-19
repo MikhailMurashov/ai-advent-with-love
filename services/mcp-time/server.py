@@ -58,19 +58,12 @@ async def get_current_timezone_datetime(
 
 
 @mcp.tool(
-    description="Текущее время на сервере",
+    description="Текущее время на сервере в ISO формате",
     annotations={"readOnlyHint": True, "openWorldHint": False},
 )
-def get_server_datetime() -> DateTimeInfo:
+def get_server_datetime() -> str:
     now = datetime.now().astimezone()
-    return DateTimeInfo(
-        date=now.strftime("%Y-%m-%d"),
-        time=now.strftime("%H:%M:%S"),
-        weekday=now.strftime("%A"),
-        timezone=now.tzname() or "Unknown",
-        utc_offset=_format_utc_offset(now),
-        iso_format=now.isoformat(),
-    )
+    return now.isoformat()
 
 
 @mcp.tool(
