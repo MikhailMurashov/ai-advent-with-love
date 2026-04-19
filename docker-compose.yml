@@ -63,6 +63,12 @@ services:
       - SQLITE_PATH=/app/data/db.sqlite
       - MCP_CONFIG_PATH=/app/mcp_config.yaml
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 1m
+      timeout: 1s
+      retries: 5
+      start_period: 15s
 
 #  ui:
 #    build:
@@ -83,5 +89,6 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped

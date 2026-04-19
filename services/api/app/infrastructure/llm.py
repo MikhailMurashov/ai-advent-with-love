@@ -35,8 +35,11 @@ class LiteLLMClient:
         if is_gigachat:
             call_kwargs["ssl_verify"] = False
             call_kwargs.pop("api_key", None)
+        if "timeout" not in call_kwargs:
+            call_kwargs["timeout"] = 60
 
         try:
+            logger.info(f"call_kwargs {call_kwargs}")
             response = await litellm.acompletion(**call_kwargs)
         except Exception as e:
             logger.error("llm: completion failed: %s", e)

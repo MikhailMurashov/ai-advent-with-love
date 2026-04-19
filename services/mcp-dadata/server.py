@@ -20,6 +20,12 @@ DADATA_SECRET_KEY = os.environ.get("DADATA_SECRET_KEY", "")
 
 
 @dataclass
+class AddressGeo:
+    geo_lat: str | None
+    geo_lon: str | None
+
+
+@dataclass
 class AddressSuggestion:
     address: str
     postal_code: str | None
@@ -42,6 +48,43 @@ class PartySuggestion:
     status: str | None
     address: str | None
     management: str | None
+
+
+@mcp.tool(
+    description="Ищет координаты адреса по любой части: регион, город, улица, дом",
+    annotations={"readOnlyHint": True, "openWorldHint": True},
+)
+async def get_address_geo(
+    query: Annotated[str, Field(description="Адрес")],
+    ctx: Context,
+) -> AddressGeo | None:
+    await ctx.info(f"get_address_geo for {query}")
+
+    if not DADATA_API_KEY:
+        raise ValueError("Не задан DADATA_API_KEY")
+
+    headers = {
+        "Authorization": f"Token {DADATA_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(
+            DADATA_SUGGEST_ADDRESS_URL,
+            headers=headers,
+            json={"query": query, "count": 1},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    suggestions = data.get("suggestions", [])
+    if not suggestions:
+        return None
+
+    suggest = suggestions[0]
+    return AddressGeo(
+        geo_lat=suggest.get("data", {}).get("geo_lat"),
+        geo_lon=suggest.get("data", {}).get("geo_lon"),
+    )
 
 
 @mcp.tool(
