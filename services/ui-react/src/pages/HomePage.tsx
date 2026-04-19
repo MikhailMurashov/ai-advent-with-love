@@ -1,8 +1,12 @@
-import { MessageSquarePlus } from 'lucide-react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button } from '@/components/ui/Button'
+import { Settings, Wrench } from 'lucide-react'
+import { ChatInput } from '@/components/chat/ChatInput'
+import { ChatSettingsModal } from '@/components/modals/ChatSettingsModal'
+import { MCPServersPanel } from '@/components/mcp/MCPServersPanel'
 import { useAppStore } from '@/store/useAppStore'
 import { useSessionSettingsStore } from '@/store/useSessionSettingsStore'
+import type { WsSendPayload } from '@/api/types'
 
 export function HomePage() {
   const navigate = useNavigate()
@@ -10,38 +14,53 @@ export function HomePage() {
   const createSession = useAppStore((s) => s.createSession)
   const settings = useSessionSettingsStore()
 
-  const handleNewChat = async () => {
+  const [showSettings, setShowSettings] = useState(false)
+  const [showMCP, setShowMCP] = useState(false)
+
+  const handleSend = async (payload: WsSendPayload) => {
+    const title = payload.content.slice(0, 20)
     const session = await createSession({
-      title: 'Новая сессия',
+      title,
       model_key: settings.model,
       strategy_type: settings.strategy,
       system_prompt: settings.systemPrompt,
     })
-    navigate(`/chat/${session.id}`)
+    navigate(`/chat/${session.id}`, { state: { firstMessage: payload.content } })
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-6 text-center px-8">
-      <div className="flex flex-col items-center gap-3">
-        <div className="rounded-2xl bg-indigo-100 p-4">
-          <MessageSquarePlus size={40} className="text-indigo-600" />
+    <div className="flex flex-col h-full items-center justify-center">
+      <div className="w-full max-w-3xl px-4">
+        <p className="text-sm text-gray-400 text-center mb-4">Начните разговор</p>
+
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden [&>div:first-child]:border-t-0">
+          <ChatInput onSend={(p) => void handleSend(p)} disabled={isLoading} />
+
+          <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-100">
+            <button
+              onClick={() => setShowSettings(true)}
+              title="Настройки чата"
+              className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-gray-500
+                hover:bg-gray-100 hover:text-gray-800 transition-colors"
+            >
+              <Settings size={13} />
+              Настройки
+            </button>
+            <button
+              onClick={() => setShowMCP(true)}
+              title="MCP-серверы"
+              className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-gray-500
+                hover:bg-gray-100 hover:text-gray-800 transition-colors"
+            >
+              <Wrench size={13} />
+              MCP
+            </button>
+          </div>
         </div>
-        <h1 className="text-2xl font-bold text-gray-900">Добро пожаловать в AI Chat</h1>
-        <p className="text-gray-500 max-w-sm text-sm leading-relaxed">
-          Выберите сессию из списка слева или создайте новый чат,
-          чтобы начать общение с AI-ассистентом.
-        </p>
       </div>
 
-      <Button
-        variant="primary"
-        size="lg"
-        disabled={isLoading}
-        onClick={() => void handleNewChat()}
-      >
-        <MessageSquarePlus size={18} />
-        Создать новый чат
-      </Button>
+      {showSettings && <ChatSettingsModal onClose={() => setShowSettings(false)} />}
+      {showMCP && <MCPServersPanel onClose={() => setShowMCP(false)} />}
     </div>
   )
 }

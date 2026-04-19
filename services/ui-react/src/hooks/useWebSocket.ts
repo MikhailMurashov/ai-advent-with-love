@@ -7,13 +7,18 @@ const USERNAME = 'guest'
 const MAX_RETRIES = 3
 const BACKOFF_BASE_MS = 1000
 
-export function useWebSocket(sessionId: string): {
+export function useWebSocket(
+  sessionId: string,
+  options?: { onOpen?: () => void },
+): {
   sendMessage: (payload: WsSendPayload) => void
 } {
   const wsRef = useRef<WebSocket | null>(null)
   const retriesRef = useRef(0)
   const shouldReconnectRef = useRef(true)
   const sessionIdRef = useRef(sessionId)
+  const onOpenRef = useRef(options?.onOpen)
+  onOpenRef.current = options?.onOpen
 
   const appendToken = useChatStore((s) => s.appendToken)
   const appendToolStep = useChatStore((s) => s.appendToolStep)
@@ -31,6 +36,7 @@ export function useWebSocket(sessionId: string): {
 
     ws.onopen = () => {
       retriesRef.current = 0
+      onOpenRef.current?.()
     }
 
     ws.onmessage = (event: MessageEvent<string>) => {
