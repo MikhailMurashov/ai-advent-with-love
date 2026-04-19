@@ -1,8 +1,12 @@
 """MCP Weather server with HTTP transport (tools/call endpoints)."""
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Annotated
+
 import httpx
 from fastmcp import FastMCP, Context
+from pydantic import Field
 from starlette.responses import JSONResponse
 
 mcp = FastMCP(name="MCP Weather Server")
@@ -18,6 +22,28 @@ WMO_CODES = {
     80: "Ливень", 81: "Умеренный ливень", 82: "Сильный ливень",
     95: "Гроза", 96: "Гроза с градом", 99: "Сильная гроза с градом",
 }
+
+
+@dataclass
+class CurrentWeather:
+    condition: str
+    temperature_c: float
+    wind_kmh: float
+    humidity_pct: float
+
+
+@dataclass
+class ForecastDay:
+    date: str
+    condition: str
+    temp_min_c: float
+    temp_max_c: float
+    precipitation_mm: float
+
+
+@dataclass
+class WeatherForecast:
+    days: list[ForecastDay]
 
 
 async def _fetch_weather(lat: float, lon: float, days: int = 1) -> dict:
@@ -36,63 +62,64 @@ async def _fetch_weather(lat: float, lon: float, days: int = 1) -> dict:
 
 
 @mcp.tool(
-    name="Текущая погода по координатам",
-    description="Возвращает текущую погоду по географическим координатам"
+    description="Возвращает текущую погоду по координатам",
+    annotations={"readOnlyHint": True, "openWorldHint": True},
 )
-async def get_current_weather(lat: float, lon: float, ctx: Context) -> str:
+async def get_current_weather(
+    lat: Annotated[float, Field(description="Широта", ge=-90, le=90)],
+    lon: Annotated[float, Field(description="Долгота", ge=-180, le=180)],
+    ctx: Context,
+) -> CurrentWeather:
     await ctx.info(f"get_current_weather for {lat} {lon}")
 
-    try:
-        data = await _fetch_weather(lat, lon, days=1)
-        await ctx.info(f"_fetch_weather: {data}")
+    data = await _fetch_weather(lat, lon, days=1)
+    await ctx.info(f"_fetch_weather: {data}")
 
-        cur = data.get("current", {})
-        temp = cur.get("temperature_2m", "?")
-        wcode = cur.get("weathercode", 0)
-        wind = cur.get("windspeed_10m", "?")
-        humidity = cur.get("relativehumidity_2m", "?")
-        desc = WMO_CODES.get(wcode, "Неизвестно")
+    cur = data.get("current", {})
+    wcode = cur.get("weathercode", 0)
 
-        return (
-            f"Состояние: {desc}\n"
-            f"Температура: {temp}°C\n"
-            f"Ветер: {wind} км/ч\n"
-            f"Влажность: {humidity}%"
-        )
-    except Exception as e:
-        return f"Ошибка получения погоды: {type(e).__name__}: {e}"
+    return CurrentWeather(
+        condition=WMO_CODES.get(wcode, "Неизвестно"),
+        temperature_c=cur.get("temperature_2m", 0.0),
+        wind_kmh=cur.get("windspeed_10m", 0.0),
+        humidity_pct=cur.get("relativehumidity_2m", 0.0),
+    )
 
 
 @mcp.tool(
-    name="Прогноз погоды",
-    description="Возвращает прогноз погоды по географическим координатам. По умолчанию на 2 дня"
+    description="Прогноз по координатам. По умолчанию на 2 дня",
+    annotations={"readOnlyHint": True, "openWorldHint": True},
 )
-async def get_forecast(lat: float, lon: float, ctx: Context, days: int = 2) -> str:
+async def get_forecast(
+    lat: Annotated[float, Field(description="Широта", ge=-90, le=90)],
+    lon: Annotated[float, Field(description="Долгота", ge=-180, le=180)],
+    ctx: Context,
+    days: Annotated[int, Field(description="Дней прогноза", ge=1, le=16)] = 2,
+) -> WeatherForecast:
     await ctx.info(f"get_forecast for {lat} {lon} by {days} days")
 
-    try:
-        data = await _fetch_weather(lat, lon, days=days)
-        await ctx.info(f"_fetch_weather: {data}")
+    data = await _fetch_weather(lat, lon, days=days)
+    await ctx.info(f"_fetch_weather: {data}")
 
-        daily = data.get("daily", {})
-        dates = daily.get("time", [])
-        codes = daily.get("weathercode", [])
-        max_temps = daily.get("temperature_2m_max", [])
-        min_temps = daily.get("temperature_2m_min", [])
-        precip = daily.get("precipitation_sum", [])
+    daily = data.get("daily", {})
+    dates = daily.get("time", [])
+    codes = daily.get("weathercode", [])
+    max_temps = daily.get("temperature_2m_max", [])
+    min_temps = daily.get("temperature_2m_min", [])
+    precip = daily.get("precipitation_sum", [])
 
-        lines = [f"Прогноз на {days} дн.:"]
+    forecast_days = [
+        ForecastDay(
+            date=date,
+            condition=WMO_CODES.get(codes[i] if i < len(codes) else 0, "?"),
+            temp_min_c=min_temps[i] if i < len(min_temps) else 0.0,
+            temp_max_c=max_temps[i] if i < len(max_temps) else 0.0,
+            precipitation_mm=precip[i] if i < len(precip) else 0.0,
+        )
+        for i, date in enumerate(dates)
+    ]
 
-        for i, date in enumerate(dates):
-            d = WMO_CODES.get(codes[i] if i < len(codes) else 0, "?")
-            tmax = max_temps[i] if i < len(max_temps) else "?"
-            tmin = min_temps[i] if i < len(min_temps) else "?"
-            pr = precip[i] if i < len(precip) else "?"
-            lines.append(f"  {date}: {d}, {tmin}…{tmax}°C, осадки {pr} мм")
-
-        return "\n".join(lines)
-    except Exception as e:
-        return f"Ошибка получения погоды: {type(e).__name__}: {e}"
+    return WeatherForecast(days=forecast_days)
 
 
 @mcp.custom_route("/health", methods=["GET"])
