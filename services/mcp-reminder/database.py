@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     channel TEXT NOT NULL,
     is_periodic INTEGER NOT NULL DEFAULT 0,
     interval_seconds INTEGER,
-    scheduled_at TEXT,
+    next_run_at TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL
 )

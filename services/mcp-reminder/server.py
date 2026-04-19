@@ -13,12 +13,17 @@ from channels import channel_registry
 from database import init_db
 from models import Notification
 import repository
+from scheduler import start_scheduler, stop_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app):
     await init_db()
+    start_scheduler()
+
     yield
+
+    stop_scheduler()
 
 
 mcp = FastMCP(name="MCP Reminder Server", lifespan=lifespan)
@@ -57,7 +62,7 @@ async def create_one_shoot_notification(
         id=str(uuid.uuid4()),
         text=text,
         channel=channel,
-        scheduled_at=datetime.fromisoformat(scheduled_at).astimezone(timezone.utc),
+        next_run_at=datetime.fromisoformat(scheduled_at).astimezone(timezone.utc),
         status="pending",
         created_at=datetime.now(timezone.utc).isoformat(),
         is_periodic=False,
@@ -74,32 +79,41 @@ async def create_one_shoot_notification(
 )
 async def create_periodic_notification(
     text: Annotated[str, Field(description="Текст уведомления")],
-    interval_seconds: Annotated[int | None, Field(description="Интервал в секундах")],
+    interval_seconds: Annotated[int, Field(description="Интервал в секундах")],
     ctx: Context,
     channel: Annotated[str, Field(description="Имя канала (например: webhook)")] = "webhook",
 ):
     if channel not in channel_registry:
         raise ValueError(f"Канал '{channel}' не найден. Доступные: {list(channel_registry.keys())}")
+    if not interval_seconds or interval_seconds <= 0:
+        raise ValueError("interval_seconds должен быть положительным числом")
 
+    now = datetime.now(timezone.utc)
     notification = Notification(
         id=str(uuid.uuid4()),
         text=text,
         channel=channel,
         is_periodic=True,
         interval_seconds=interval_seconds,
+        next_run_at=now,
         status="pending",
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=now.isoformat(),
     )
     await repository.create(notification)
     await ctx.info(f"Created notification {notification.id}")
 
 
-@mcp.tool(description="Возвращает список уведомлений с опциональным фильтром по статусу")
-async def list_notifications(
-    status: Annotated[str | None, Field(description="Фильтр: pending или cancelled. Пусто — все")] = None,
-) -> list[dict]:
-    items = await repository.list_notifications(status)
+@mcp.tool(description="Возвращает список уведомлений на отправку")
+async def list_pending_notifications() -> list[dict]:
+    items = await repository.list_notifications("pending")
     return [n.model_dump() for n in items]
+
+
+@mcp.tool(description="Возвращает список отправленных уведомлений")
+async def list_sent_notifications() -> list[dict]:
+    items = await repository.list_notifications("sent")
+    return [n.model_dump() for n in items]
+
 
 
 @mcp.tool(description="Отменяет уведомление по ID")

@@ -10,6 +10,7 @@ COPY server.py .
 COPY models.py .
 COPY database.py .
 COPY repository.py .
+COPY scheduler.py .
 COPY channels/ channels/
 
 RUN mkdir -p /app/data

@@ -11,6 +11,6 @@ class Notification(BaseModel):
     channel: str
     is_periodic: bool
     interval_seconds: int | None = None
-    scheduled_at: datetime | None = None
-    status: Literal["pending", "cancelled"]
+    next_run_at: datetime | None = None
+    status: Literal["pending", "cancelled", "sent"]
     created_at: str
