@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -64,6 +64,16 @@ async def get_current_timezone_datetime(
 def get_server_datetime() -> str:
     now = datetime.now().astimezone()
     return now.isoformat()
+
+
+@mcp.tool(
+    description="Прибавляет к текущему времени секунды и возвращает в формате ISO",
+    annotations={"readOnlyHint": True, "openWorldHint": False},
+)
+def add_sec_to_now(add_sec: int) -> str:
+    now = datetime.now().astimezone()
+    result = now + timedelta(seconds=add_sec)
+    return result.isoformat()
 
 
 @mcp.tool(
