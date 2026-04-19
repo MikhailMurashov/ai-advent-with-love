@@ -86,19 +86,6 @@ services:
       retries: 5
       start_period: 15s
 
-#  ui:
-#    build:
-#      context: ./services/ui
-#    ports:
-#      - "8501:8501"
-#    depends_on:
-#      - api
-#    environment:
-#      - API_URL=http://api:8000
-#      - DEFAULT_MODEL=${LLM_MODEL:-gigachat/GigaChat-2}
-#      - CHAINLIT_AUTH_SECRET=${CHAINLIT_AUTH_SECRET:-EahjBaVnGvFWM_iLp64PwGp4c3VYtfMjVvfriJiSDEI}
-#    restart: unless-stopped
-
   ui-react:
     build:
       context: ./services/ui-react
