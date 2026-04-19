@@ -3,6 +3,7 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { HomePage } from '@/pages/HomePage'
 import { ChatPage } from '@/components/chat/ChatPage'
 import { useInitUser } from '@/hooks/useInitUser'
+import { NotificationContainer } from '@/components/ui/NotificationContainer'
 
 function AppRoutes() {
   useInitUser()
@@ -21,6 +22,7 @@ export function App() {
   return (
     <BrowserRouter>
       <AppRoutes />
+      <NotificationContainer />
     </BrowserRouter>
   )
 }

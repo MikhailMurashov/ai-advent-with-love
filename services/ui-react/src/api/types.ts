@@ -69,7 +69,12 @@ export interface WsErrorEvent {
   message: string
 }
 
-export type WsServerEvent = WsTokenEvent | WsToolStepEvent | WsDoneEvent | WsErrorEvent
+export interface WsNotificationEvent {
+  type: 'notification'
+  content: string
+}
+
+export type WsServerEvent = WsTokenEvent | WsToolStepEvent | WsDoneEvent | WsErrorEvent | WsNotificationEvent
 
 export interface WsSendPayload {
   content: string
