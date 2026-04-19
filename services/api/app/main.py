@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import logging
 
-import yaml
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
 from app.db.database import async_session_factory, create_tables
 from app.db.repositories import SQLiteMCPServerRepository
 from app.dependencies import get_mcp_client

@@ -5,6 +5,12 @@ services:
     ports:
       - "8001:8001"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 1m
+      timeout: 1s
+      retries: 5
+      start_period: 5s
 
   mcp-time:
     build:
@@ -12,6 +18,12 @@ services:
     ports:
       - "8002:8002"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health')\""]
+      interval: 1m
+      timeout: 1s
+      retries: 5
+      start_period: 5s
 
   mcp-dadata:
     build:
@@ -22,6 +34,12 @@ services:
       - DADATA_API_KEY=${DADATA_API_KEY:-}
       - DADATA_SECRET_KEY=${DADATA_SECRET_KEY:-}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8003/health')\""]
+      interval: 1m
+      timeout: 1s
+      retries: 5
+      start_period: 5s
 
   api:
     build:
@@ -29,9 +47,12 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - mcp-weather
-      - mcp-time
-      - mcp-dadata
+      mcp-weather:
+        condition: service_healthy
+      mcp-time:
+        condition: service_healthy
+      mcp-dadata:
+        condition: service_healthy
     volumes:
       - ./data:/app/data
     environment:

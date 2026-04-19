@@ -4,10 +4,10 @@ from __future__ import annotations
 import os
 
 import httpx
-from fastapi import FastAPI
-from pydantic import BaseModel
+from fastmcp import FastMCP, Context
+from starlette.responses import JSONResponse
 
-app = FastAPI(title="MCP Dadata Server")
+mcp = FastMCP(name="MCP Weather Server")
 
 DADATA_SUGGEST_URL = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/party"
 DADATA_SUGGEST_ADDRESS_URL = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address"
@@ -16,7 +16,13 @@ DADATA_API_KEY = os.environ.get("DADATA_API_KEY", "")
 DADATA_SECRET_KEY = os.environ.get("DADATA_SECRET_KEY", "")
 
 
-async def suggest_address(query: str, count: int = 1) -> str:
+@mcp.tool(
+    name="Подсказка адреса",
+    description="Ищет адреса по любой части адреса от региона до квартиры. Используй для любого запроса о городе или адресе"
+)
+async def suggest_address(query: str, ctx: Context, count: int = 1) -> str:
+    await ctx.info(f"suggest_address for {query}")
+
     if not query:
         return "Ошибка: запрос не может быть пустым"
     if not 1 <= count <= 20:
@@ -66,6 +72,10 @@ async def suggest_address(query: str, count: int = 1) -> str:
         return f"Ошибка: {e}"
 
 
+@mcp.tool(
+    name="Подсказка организации",
+    description="Ищет компании и индивидуальных предпринимателей: по ИНН, ИНН/КПП, ОГРН или названию"
+)
 async def suggest_party(query: str, count: int = 5) -> str:
     if not query:
         return "Ошибка: запрос не может быть пустым"
@@ -120,88 +130,6 @@ async def suggest_party(query: str, count: int = 5) -> str:
         return f"Ошибка: {e}"
 
 
-# ---- HTTP endpoints ----
-
-TOOLS_LIST = [
-    {
-        "name": "suggest_address",
-        "description": (
-            "Поиск российских адресов, городов и населённых пунктов по любому запросу через Dadata Suggestions API. "
-            "Возвращает полный адрес, регион, город, почтовый индекс и координаты. "
-            "Используй для любого запроса о городе или адресе."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Адрес, название города или населённого пункта для поиска",
-                },
-                "count": {
-                    "type": "integer",
-                    "description": "Количество результатов (1–20, по умолчанию 1)",
-                    "minimum": 1,
-                    "maximum": 20,
-                    "default": 1,
-                },
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "suggest_party",
-        "description": (
-            "Поиск российских организаций и ИП по названию или ИНН через Dadata Suggestions API. "
-            "Возвращает ИНН, ОГРН, КПП, форму собственности, статус, адрес и руководителя."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Название организации, ИНН или ОГРН для поиска",
-                },
-                "count": {
-                    "type": "integer",
-                    "description": "Количество результатов (1–20, по умолчанию 1)",
-                    "minimum": 1,
-                    "maximum": 20,
-                    "default": 1,
-                },
-            },
-            "required": ["query"],
-        },
-    },
-]
-
-
-@app.get("/tools")
-async def list_tools() -> dict:
-    return {"tools": TOOLS_LIST}
-
-
-class CallRequest(BaseModel):
-    name: str
-    arguments: dict = {}
-
-
-@app.post("/call")
-async def call_tool(req: CallRequest) -> dict:
-    if req.name == "suggest_address":
-        result = await suggest_address(**req.arguments)
-    elif req.name == "suggest_party":
-        result = await suggest_party(**req.arguments)
-    else:
-        result = f"Unknown tool: {req.name}"
-    return {"content": [{"type": "text", "text": result}]}
-
-
-@app.get("/health")
-async def health() -> dict:
-    return {"status": "ok"}
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8003)
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request):
+    return JSONResponse({"status": "ok", "service": "mcp-server"})
