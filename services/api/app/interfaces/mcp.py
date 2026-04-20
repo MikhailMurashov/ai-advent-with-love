@@ -9,6 +9,8 @@ class ToolSchema:
     name: str
     description: str
     parameters: dict
+    few_shot_examples: list | None = None
+    return_parameters: dict | None = None
 
 
 @runtime_checkable

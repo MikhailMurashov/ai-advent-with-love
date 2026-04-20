@@ -2,9 +2,43 @@ from __future__ import annotations
 
 import logging
 
-from app.interfaces.mcp import IMCPTransport, ToolSchema
+from app.interfaces.mcp import IMCPTransport, ToolSchema  # noqa: F401
 
 logger = logging.getLogger(__name__)
+
+# GigaChat-specific metadata for tools. MCP protocol doesn't support these fields,
+# so they are maintained here in the API layer and merged at schema-build time.
+_GIGACHAT_TOOL_META: dict[str, dict] = {
+    "create_one_shoot_notification": {
+        "few_shot_examples": [
+            {
+                "request": "напомни мне через 5 минут проверить почту",
+                "params": {
+                    "text": "Проверить почту",
+                    "scheduled_at": "2026-04-20T10:05:00+03:00",
+                    "channel": "webhook",
+                },
+            },
+            {
+                "request": "создай уведомление 'позвонить клиенту' на 15:30",
+                "params": {
+                    "text": "Позвонить клиенту",
+                    "scheduled_at": "2026-04-20T15:30:00+03:00",
+                    "channel": "webhook",
+                },
+            },
+        ],
+        "return_parameters": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "description": "Результат: 'ok' при успехе",
+                },
+            },
+        },
+    },
+}
 
 
 class MCPClient:
@@ -30,15 +64,24 @@ class MCPClient:
             except Exception as e:
                 logger.warning("mcp_client: failed to list tools: %s", e)
 
-        self._tools_schema = [
-            {
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.parameters,
-                },
+        def _build_function(t: ToolSchema) -> dict:
+            fn: dict = {
+                "name": t.name,
+                "description": t.description,
+                "parameters": t.parameters,
             }
+            # Prefer fields from MCP schema; fall back to hardcoded metadata
+            meta = _GIGACHAT_TOOL_META.get(t.name, {})
+            few_shot = t.few_shot_examples if t.few_shot_examples is not None else meta.get("few_shot_examples")
+            return_params = t.return_parameters if t.return_parameters is not None else meta.get("return_parameters")
+            if few_shot is not None:
+                fn["few_shot_examples"] = few_shot
+            if return_params is not None:
+                fn["return_parameters"] = return_params
+            return fn
+
+        self._tools_schema = [
+            {"type": "function", "function": _build_function(t)}
             for t in schemas
         ]
         logger.info("mcp_client: loaded %d tools", len(self._tools_schema))

@@ -20,14 +20,20 @@ class FastMCPTransport:
         logger.info(f"Fetching tools from {self._mcp_url}")
         async with Client(self._mcp_url) as client:
             tools = await client.list_tools()
-        return [
-            ToolSchema(
+        result = []
+        for t in tools:
+            schema = dict(t.inputSchema or {})
+            # GigaChat-specific fields stored as top-level keys in inputSchema
+            few_shot = schema.pop("few_shot_examples", None)
+            return_params = schema.pop("return_parameters", None)
+            result.append(ToolSchema(
                 name=t.name,
                 description=t.description or "",
-                parameters=t.inputSchema or {},
-            )
-            for t in tools
-        ]
+                parameters=schema,
+                few_shot_examples=few_shot,
+                return_parameters=return_params,
+            ))
+        return result
 
     async def call_tool(self, name: str, args: dict) -> str:
         async with Client(self._mcp_url) as client:

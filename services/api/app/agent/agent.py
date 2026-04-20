@@ -43,7 +43,7 @@ class Agent:
         personalization: Personalization,
         invariants: Invariants,
     ) -> str:
-        parts: list[str] = []
+        parts: list[str] = [f"Текущее время: {_now()}"]
 
         inv = invariants.to_context_string()
         if inv:
@@ -95,7 +95,7 @@ class Agent:
 
         try:
             summary_text = ""
-            async for event in self._llm.stream_chat(
+            for event in await self._llm.chat(
                 messages=[{"role": "user", "content": prompt}],
                 tools=[],
                 model=model,
@@ -157,14 +157,27 @@ class Agent:
                         pass
                 self._strategy._history.append(entry)
             elif msg.role == "tool":
-                # tool_calls field stores the tool_call_id for tool-result messages
-                self._strategy._history.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": msg.tool_calls or "",
-                        "content": msg.content,
-                    }
-                )
+                # tool_calls field stores {"id": "...", "name": "..."} (new) or just id (legacy)
+                tool_call_id = ""
+                tool_name = ""
+                if msg.tool_calls:
+                    try:
+                        meta = json.loads(msg.tool_calls)
+                        if isinstance(meta, dict):
+                            tool_call_id = meta.get("id", "")
+                            tool_name = meta.get("name", "")
+                        else:
+                            tool_call_id = msg.tool_calls
+                    except (json.JSONDecodeError, TypeError):
+                        tool_call_id = msg.tool_calls
+                entry: dict = {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": msg.content,
+                }
+                if tool_name:
+                    entry["name"] = tool_name
+                self._strategy._history.append(entry)
             elif msg.role == "user":
                 self._strategy._history.append({"role": "user", "content": msg.content})
 
@@ -212,7 +225,7 @@ class Agent:
             current_content = ""
             buffered_token_events: list[ChatEvent] = []
 
-            async for event in self._llm.stream_chat(
+            for event in await self._llm.chat(
                 messages=llm_messages,
                 tools=tools,
                 model=model,
@@ -293,14 +306,14 @@ class Agent:
                         "result": result,
                     }
                 )
-                # Save tool result to DB (tool_calls field stores tool_call_id)
+                # Save tool result to DB; encode both id and name for later restore
                 await self._session_repo.save_message(
                     Message(
                         id=str(uuid.uuid4()),
                         session_id=session_id,
                         role="tool",
                         content=result,
-                        tool_calls=tc["id"],
+                        tool_calls=json.dumps({"id": tc["id"], "name": tc["name"]}),
                         tokens_prompt=None,
                         tokens_completion=None,
                         elapsed_s=None,
@@ -329,6 +342,7 @@ class Agent:
                     {
                         "role": "tool",
                         "tool_call_id": tr["tool_call_id"],
+                        "name": tr["name"],
                         "content": tr["result"],
                     }
                 )

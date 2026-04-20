@@ -6,10 +6,74 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import litellm
+from litellm.llms.gigachat.chat.transformation import GigaChatConfig
 
 from app.interfaces.llm import ChatEvent
 
 logger = logging.getLogger(__name__)
+
+
+def _patch_gigachat_transform() -> None:
+    """
+    Patch litellm's GigaChat transformer to:
+    1. Preserve 'name' in role='function' messages (required by GigaChat API).
+    2. Pass through 'few_shot_examples' and 'return_parameters' in functions array.
+
+    litellm universally removes the 'name' field from all messages, but GigaChat
+    requires it in function-result messages to identify which function returned the result.
+    """
+    original = GigaChatConfig._transform_messages
+
+    def patched(self, messages):  # type: ignore[override]
+        # Collect tool_call_id → name mapping before transformation strips names
+        tc_name: dict[str, str] = {}
+        for msg in messages:
+            if msg.get("role") == "tool":
+                tid = msg.get("tool_call_id", "")
+                name = msg.get("name", "")
+                if tid and name:
+                    tc_name[tid] = name
+
+        transformed = original(self, messages)
+
+        for t_msg, o_msg in zip(transformed, messages):
+            if t_msg.get("role") == "function":
+                tid = o_msg.get("tool_call_id", "")
+                name = tc_name.get(tid) or o_msg.get("name", "")
+                if name:
+                    t_msg["name"] = name
+                # Remove tool_call_id — GigaChat doesn't use it
+                t_msg.pop("tool_call_id", None)
+
+        return transformed
+
+    GigaChatConfig._transform_messages = patched  # type: ignore[method-assign]
+
+
+_patch_gigachat_transform()
+
+
+def _gigachat_functions(tools: list[dict]) -> list[dict]:
+    """
+    Convert OpenAI-style tools to GigaChat functions format,
+    preserving GigaChat-specific extra fields (few_shot_examples, return_parameters).
+    litellm's built-in conversion drops these fields.
+    """
+    fns = []
+    for tool in tools:
+        if tool.get("type") != "function":
+            continue
+        func = tool["function"]
+        fn: dict = {
+            "name": func.get("name", ""),
+            "description": func.get("description", ""),
+            "parameters": func.get("parameters", {}),
+        }
+        for extra in ("few_shot_examples", "return_parameters"):
+            if extra in func:
+                fn[extra] = func[extra]
+        fns.append(fn)
+    return fns
 
 
 class LiteLLMClient:
@@ -31,7 +95,11 @@ class LiteLLMClient:
             **params,
         }
         if tools:
-            call_kwargs["tools"] = tools
+            if is_gigachat:
+                # Pass as 'functions' to bypass litellm's conversion and keep extra fields
+                call_kwargs["functions"] = _gigachat_functions(tools)
+            else:
+                call_kwargs["tools"] = tools
         if is_gigachat:
             call_kwargs["ssl_verify"] = False
             call_kwargs.pop("api_key", None)
@@ -105,3 +173,77 @@ class LiteLLMClient:
                 "completion_tokens": completion_tokens,
             },
         )
+
+    async def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        **params,
+    ) -> list[ChatEvent]:
+        model: str = params.pop("model", "")
+        is_gigachat = model.startswith("gigachat/")
+
+        call_kwargs: dict = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            **params,
+        }
+        if tools:
+            if is_gigachat:
+                call_kwargs["functions"] = _gigachat_functions(tools)
+            else:
+                call_kwargs["tools"] = tools
+        if is_gigachat:
+            call_kwargs["ssl_verify"] = False
+            call_kwargs.pop("api_key", None)
+        if "timeout" not in call_kwargs:
+            call_kwargs["timeout"] = 60
+
+        try:
+            logger.info(f"call_kwargs {call_kwargs}")
+            response = await litellm.acompletion(**call_kwargs)
+        except Exception as e:
+            logger.error("llm: completion failed: %s", e)
+            return [ChatEvent(type="error", message=str(e))]
+
+        events: list[ChatEvent] = []
+        message = response.choices[0].message if response.choices else None
+        if message is None:
+            return [ChatEvent(type="error", message="empty response")]
+
+        if message.content:
+            events.append(ChatEvent(type="token", content=message.content))
+
+        if message.tool_calls:
+            for tc in message.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    args = {"raw": tc.function.arguments}
+                events.append(ChatEvent(
+                    type="tool_call",
+                    name=tc.function.name,
+                    args=args,
+                    tool_call_id=tc.id or str(uuid.uuid4()),
+                ))
+        elif hasattr(message, "function_call") and message.function_call:
+            fc = message.function_call
+            try:
+                args = json.loads(fc.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {"raw": fc.arguments}
+            events.append(ChatEvent(
+                type="tool_call",
+                name=fc.name,
+                args=args,
+                tool_call_id=str(uuid.uuid4()),
+            ))
+
+        prompt_tokens = getattr(response.usage, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(response.usage, "completion_tokens", 0) or 0
+        events.append(ChatEvent(
+            type="done",
+            stats={"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens},
+        ))
+        return events
