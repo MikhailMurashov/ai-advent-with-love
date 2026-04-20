@@ -4,6 +4,13 @@ services:
       context: ./services/mcp-weather
     ports:
       - "8001:8001"
+    depends_on:
+      mcp-dadata:
+        condition: service_healthy
+      mcp-saver:
+        condition: service_healthy
+      mcp-summarize:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
@@ -51,6 +58,34 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8004/health')\""]
+      interval: 1m
+      timeout: 1s
+      retries: 5
+      start_period: 5s
+
+  mcp-saver:
+    build:
+      context: ./services/mcp-saver
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8005/health')\""]
+      interval: 1m
+      timeout: 1s
+      retries: 5
+      start_period: 5s
+
+  mcp-summarize:
+    build:
+      context: ./services/mcp-summarize
+    ports:
+      - "8006:8006"
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8006/health')\"" ]
       interval: 1m
       timeout: 1s
       retries: 5
