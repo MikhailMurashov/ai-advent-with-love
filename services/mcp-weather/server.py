@@ -162,6 +162,12 @@ async def save_forecast_summary(
     return True
 
 
+mcp.disable(names=[
+    "save_forecast_summary",
+    "get_current_weather",
+])
+
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request):
     return JSONResponse({"status": "ok", "service": "mcp-server"})

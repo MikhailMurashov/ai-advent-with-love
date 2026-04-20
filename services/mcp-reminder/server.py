@@ -43,22 +43,16 @@ async def available_channels() -> dict:
     }
 
 
-@mcp.tool(
-    description=(
-        "Создаёт одноразовое уведомление. "
-        "Перед созданием прочитай ресурс `notifications://channels`, чтобы узнать доступные каналы"
-    ),
-)
+@mcp.tool(description="Создаёт одноразовое уведомление на указанное время.")
 async def create_one_shoot_notification(
     text: Annotated[str, Field(description="Текст уведомления")],
     scheduled_at: Annotated[str, Field(
-        description=
-            "ISO datetime для уведомления, например '2026-04-19T10:30:00Z'. "
-            "Не передавай относительные строки вроде 'через 1 минуту'."
+        description="Абсолютный ISO datetime, например '2026-04-20T10:30:00+03:00'. "
+                    "Вычисли из текущего времени (оно есть в системном промпте)."
     )],
     ctx: Context,
     channel: Annotated[str, Field(description="Имя канала")] = "webhook",
-):
+) -> bool:
     if channel not in channel_registry:
         raise ValueError(f"Канал '{channel}' не найден. Доступные: {list(channel_registry.keys())}")
 
@@ -73,6 +67,7 @@ async def create_one_shoot_notification(
     )
     await repository.create(notification)
     await ctx.info(f"Created notification {notification.id}")
+    return True
 
 
 @mcp.tool(
@@ -86,7 +81,7 @@ async def create_periodic_notification(
     interval_seconds: Annotated[int, Field(description="Интервал в секундах")],
     ctx: Context,
     channel: Annotated[str, Field(description="Имя канала (например: webhook)")] = "webhook",
-):
+) -> bool:
     if channel not in channel_registry:
         raise ValueError(f"Канал '{channel}' не найден. Доступные: {list(channel_registry.keys())}")
     if not interval_seconds or interval_seconds <= 0:
@@ -105,6 +100,7 @@ async def create_periodic_notification(
     )
     await repository.create(notification)
     await ctx.info(f"Created notification {notification.id}")
+    return True
 
 
 @mcp.tool(description="Возвращает список уведомлений на отправку")
@@ -123,10 +119,11 @@ async def list_sent_notifications() -> list[dict]:
 @mcp.tool(description="Отменяет уведомление по ID")
 async def delete_notification(
     notification_id: Annotated[str, Field(description="ID уведомления")],
-):
+) -> bool:
     ok = await repository.cancel(notification_id)
     if not ok:
         raise ValueError(f"Уведомление {notification_id} не найдено")
+    return True
 
 
 @mcp.tool(description="Возвращает полную запись уведомления по ID")
@@ -137,6 +134,15 @@ async def get_notification_status(
     if notification is None:
         raise ValueError(f"Уведомление {notification_id} не найдено")
     return notification.model_dump()
+
+
+mcp.disable(names=[
+    "get_notification_status",
+    "delete_notification",
+    "list_sent_notifications",
+    "list_pending_notifications",
+    "create_periodic_notification",
+])
 
 
 @mcp.custom_route("/health", methods=["GET"])

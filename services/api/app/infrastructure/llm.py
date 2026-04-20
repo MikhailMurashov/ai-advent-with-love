@@ -6,10 +6,74 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import litellm
+from litellm.llms.gigachat.chat.transformation import GigaChatConfig
 
 from app.interfaces.llm import ChatEvent
 
 logger = logging.getLogger(__name__)
+
+
+def _patch_gigachat_transform() -> None:
+    """
+    Patch litellm's GigaChat transformer to:
+    1. Preserve 'name' in role='function' messages (required by GigaChat API).
+    2. Pass through 'few_shot_examples' and 'return_parameters' in functions array.
+
+    litellm universally removes the 'name' field from all messages, but GigaChat
+    requires it in function-result messages to identify which function returned the result.
+    """
+    original = GigaChatConfig._transform_messages
+
+    def patched(self, messages):  # type: ignore[override]
+        # Collect tool_call_id → name mapping before transformation strips names
+        tc_name: dict[str, str] = {}
+        for msg in messages:
+            if msg.get("role") == "tool":
+                tid = msg.get("tool_call_id", "")
+                name = msg.get("name", "")
+                if tid and name:
+                    tc_name[tid] = name
+
+        transformed = original(self, messages)
+
+        for t_msg, o_msg in zip(transformed, messages):
+            if t_msg.get("role") == "function":
+                tid = o_msg.get("tool_call_id", "")
+                name = tc_name.get(tid) or o_msg.get("name", "")
+                if name:
+                    t_msg["name"] = name
+                # Remove tool_call_id — GigaChat doesn't use it
+                t_msg.pop("tool_call_id", None)
+
+        return transformed
+
+    GigaChatConfig._transform_messages = patched  # type: ignore[method-assign]
+
+
+_patch_gigachat_transform()
+
+
+def _gigachat_functions(tools: list[dict]) -> list[dict]:
+    """
+    Convert OpenAI-style tools to GigaChat functions format,
+    preserving GigaChat-specific extra fields (few_shot_examples, return_parameters).
+    litellm's built-in conversion drops these fields.
+    """
+    fns = []
+    for tool in tools:
+        if tool.get("type") != "function":
+            continue
+        func = tool["function"]
+        fn: dict = {
+            "name": func.get("name", ""),
+            "description": func.get("description", ""),
+            "parameters": func.get("parameters", {}),
+        }
+        for extra in ("few_shot_examples", "return_parameters"):
+            if extra in func:
+                fn[extra] = func[extra]
+        fns.append(fn)
+    return fns
 
 
 class LiteLLMClient:
@@ -31,7 +95,11 @@ class LiteLLMClient:
             **params,
         }
         if tools:
-            call_kwargs["tools"] = tools
+            if is_gigachat:
+                # Pass as 'functions' to bypass litellm's conversion and keep extra fields
+                call_kwargs["functions"] = _gigachat_functions(tools)
+            else:
+                call_kwargs["tools"] = tools
         if is_gigachat:
             call_kwargs["ssl_verify"] = False
             call_kwargs.pop("api_key", None)

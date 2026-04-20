@@ -115,6 +115,12 @@ async def get_time_by_coords(
     )
 
 
+mcp.disable(names=[
+    "get_time_by_coords",
+    "get_current_timezone_datetime",
+])
+
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request):
     return JSONResponse({"status": "ok", "service": "mcp-server"})

@@ -175,6 +175,11 @@ async def suggest_party(
     ]
 
 
+mcp.disable(names=[
+    "suggest_party",
+])
+
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request):
     return JSONResponse({"status": "ok", "service": "mcp-server"})
