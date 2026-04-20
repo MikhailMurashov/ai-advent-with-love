@@ -24,3 +24,10 @@ class ILLMClient(Protocol):
         **params,
     ) -> AsyncGenerator[ChatEvent, None]:
         ...
+
+    async def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        **params,
+    ) -> list[ChatEvent]: ...

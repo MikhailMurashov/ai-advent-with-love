@@ -173,3 +173,77 @@ class LiteLLMClient:
                 "completion_tokens": completion_tokens,
             },
         )
+
+    async def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        **params,
+    ) -> list[ChatEvent]:
+        model: str = params.pop("model", "")
+        is_gigachat = model.startswith("gigachat/")
+
+        call_kwargs: dict = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            **params,
+        }
+        if tools:
+            if is_gigachat:
+                call_kwargs["functions"] = _gigachat_functions(tools)
+            else:
+                call_kwargs["tools"] = tools
+        if is_gigachat:
+            call_kwargs["ssl_verify"] = False
+            call_kwargs.pop("api_key", None)
+        if "timeout" not in call_kwargs:
+            call_kwargs["timeout"] = 60
+
+        try:
+            logger.info(f"call_kwargs {call_kwargs}")
+            response = await litellm.acompletion(**call_kwargs)
+        except Exception as e:
+            logger.error("llm: completion failed: %s", e)
+            return [ChatEvent(type="error", message=str(e))]
+
+        events: list[ChatEvent] = []
+        message = response.choices[0].message if response.choices else None
+        if message is None:
+            return [ChatEvent(type="error", message="empty response")]
+
+        if message.content:
+            events.append(ChatEvent(type="token", content=message.content))
+
+        if message.tool_calls:
+            for tc in message.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    args = {"raw": tc.function.arguments}
+                events.append(ChatEvent(
+                    type="tool_call",
+                    name=tc.function.name,
+                    args=args,
+                    tool_call_id=tc.id or str(uuid.uuid4()),
+                ))
+        elif hasattr(message, "function_call") and message.function_call:
+            fc = message.function_call
+            try:
+                args = json.loads(fc.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {"raw": fc.arguments}
+            events.append(ChatEvent(
+                type="tool_call",
+                name=fc.name,
+                args=args,
+                tool_call_id=str(uuid.uuid4()),
+            ))
+
+        prompt_tokens = getattr(response.usage, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(response.usage, "completion_tokens", 0) or 0
+        events.append(ChatEvent(
+            type="done",
+            stats={"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens},
+        ))
+        return events

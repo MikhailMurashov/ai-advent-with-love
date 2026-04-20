@@ -95,7 +95,7 @@ class Agent:
 
         try:
             summary_text = ""
-            async for event in self._llm.stream_chat(
+            for event in await self._llm.chat(
                 messages=[{"role": "user", "content": prompt}],
                 tools=[],
                 model=model,
@@ -225,7 +225,7 @@ class Agent:
             current_content = ""
             buffered_token_events: list[ChatEvent] = []
 
-            async for event in self._llm.stream_chat(
+            for event in await self._llm.chat(
                 messages=llm_messages,
                 tools=tools,
                 model=model,
