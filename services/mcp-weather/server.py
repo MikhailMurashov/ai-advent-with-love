@@ -1,11 +1,12 @@
 """MCP Weather server with HTTP transport (tools/call endpoints)."""
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from typing import Annotated
 
 import httpx
-from fastmcp import FastMCP, Context
+from fastmcp import FastMCP, Context, Client
 from pydantic import Field
 from starlette.responses import JSONResponse
 
@@ -120,6 +121,45 @@ async def get_forecast(
     ]
 
     return WeatherForecast(days=forecast_days)
+
+
+@mcp.tool(
+    description="Сохраняет в файл саммари прогноза по координатам на 7 дней",
+    annotations={"readOnlyHint": False, "openWorldHint": True},
+)
+async def save_forecast_summary(
+    lat: Annotated[float, Field(description="Широта", ge=-90, le=90)],
+    lon: Annotated[float, Field(description="Долгота", ge=-180, le=180)],
+    ctx: Context,
+) -> bool:
+    await ctx.info(f"save_forecast_summary for {lat} {lon}")
+
+    data = await _fetch_weather(lat, lon, days=7)
+
+    daily = data.get("daily", {})
+    dates = daily.get("time", [])
+    codes = daily.get("weathercode", [])
+    max_temps = daily.get("temperature_2m_max", [])
+    min_temps = daily.get("temperature_2m_min", [])
+    precip = daily.get("precipitation_sum", [])
+
+    forecast_days = [
+        ForecastDay(
+            date=date,
+            condition=WMO_CODES.get(codes[i] if i < len(codes) else 0, "?"),
+            temp_min_c=min_temps[i] if i < len(min_temps) else 0.0,
+            temp_max_c=max_temps[i] if i < len(max_temps) else 0.0,
+            precipitation_mm=precip[i] if i < len(precip) else 0.0,
+        )
+        for i, date in enumerate(dates)
+    ]
+
+    async with Client("http://mcp-summarize:8006/mcp") as client:
+        await client.call_tool("save_forecast_summary", {
+            "forecast": {"days": [dataclasses.asdict(d) for d in forecast_days]},
+        })
+
+    return True
 
 
 @mcp.custom_route("/health", methods=["GET"])
